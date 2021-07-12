@@ -1,14 +1,14 @@
 package com.example.miccheck
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.MicExternalOn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,24 +22,25 @@ import androidx.compose.ui.unit.sp
 import com.example.miccheck.ui.theme.MicCheckTheme
 
 @Composable
-fun Chip (
+fun Chip(
     text: String,
-    color: Color = MaterialTheme.colors.surface,
-    contentColor: Color = MaterialTheme.colors.onSurface,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colors.surface,
+    contentColor: Color = MaterialTheme.colors.onSurface
 ) {
-    OutlinedButton (
-        onClick = onClick,
-        modifier =
-            modifier
-                .height(32.dp),
-        elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
-        colors = ButtonDefaults.outlinedButtonColors(color, contentColor),
-        shape = RoundedCornerShape(50),
-        border = ButtonDefaults.outlinedBorder.copy(width = 1.dp)
-    ) {
-        Text (text)
+    Row {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
+            colors = ButtonDefaults.outlinedButtonColors(color, contentColor),
+            shape = RoundedCornerShape(100),
+            border = ButtonDefaults.outlinedBorder.copy(width = 1.dp)
+        ) {
+            Text(text)
+        }
+        Spacer(Modifier.width(8.dp))
     }
 }
 
@@ -78,7 +79,7 @@ fun BigButton(
         modifier =
         Modifier
             .padding(0.dp, 0.dp, 12.dp, 0.dp)
-            .animateContentSize()
+//            .animateContentSize()
     ) {
         Row (
             modifier =
@@ -87,8 +88,8 @@ fun BigButton(
         ) {
             AnimatedVisibility(
                 visible = selected,
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = expandHorizontally(),
+                exit = shrinkHorizontally(),
                 modifier = Modifier.align(Alignment.CenterVertically)
             ) {
                 Row {

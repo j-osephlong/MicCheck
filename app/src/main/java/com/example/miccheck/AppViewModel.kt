@@ -2,7 +2,6 @@ package com.example.miccheck
 
 import android.content.ContentUris
 import android.content.Context
-import android.content.Context.MODE_PRIVATE
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -13,22 +12,29 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import java.time.Instant
 import java.time.ZoneId
-import java.util.concurrent.TimeUnit
 
 class AppViewModel : ViewModel() {
     var currentPlayBack by mutableStateOf(false)
     var currentPlayBackSrc by mutableStateOf<Uri?>(null)
     var currentlyRecording by mutableStateOf(false)
+    var selectedScreen by mutableStateOf(0)
 
-    var recordings by mutableStateOf(listOf<Recording>(
-        Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0)
-    ))
-    var groups by mutableStateOf(listOf<RecordingGroup>(
-        RecordingGroup("PLACEHOLDER", listOf(), null, Color.White)
-    ))
+    var recordings by mutableStateOf(
+        listOf<Recording>(
+            Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0)
+        )
+    )
+    var groups by mutableStateOf(
+        listOf<RecordingGroup>(
+            RecordingGroup("PLACEHOLDER", listOf(), null, Color.White)
+        )
+    )
 
-    suspend fun loadRecordings (context: Context)
-    {
+    fun setScreen(screen: Int) {
+        selectedScreen = screen
+    }
+
+    suspend fun loadRecordings(context: Context) {
         Log.i("MC VM", "loadRecordings !!")
 
         val collection = MediaStore.Audio.Media.getContentUri(
@@ -71,7 +77,7 @@ class AppViewModel : ViewModel() {
                 val name = cursor.getString(nameColumn)
                 val duration = cursor.getInt(durationColumn)
                 val size = cursor.getInt(sizeColumn)
-                val date = cursor.getLong(dateColumn)
+                val date = cursor.getInt(dateColumn) * 1000L
 
                 val contentUri: Uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
