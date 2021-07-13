@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onSelectRecording = { /*TODO*/ },
+                        onAddRecordingTag = mainActivityVM::addTagToRecording,
                         onSelectScreen = mainActivityVM::setScreen,
                         selectedScreen = mainActivityVM.selectedScreen
                     )

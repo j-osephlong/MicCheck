@@ -1,26 +1,20 @@
 package com.example.miccheck
 
 import android.net.Uri
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.miccheck.ui.theme.MicCheckTheme
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.*
-import kotlin.math.min
 
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
@@ -30,51 +24,58 @@ fun MainScreen(
     currentlyRecording: Boolean,
     onStartRecord: () -> Unit,
     onStopRecord: () -> Unit,
-    onSelectRecording: () -> Unit,
+    onSelectRecording: (Uri) -> Unit,
+    onAddRecordingTag: (Uri) -> Unit,
     onSelectScreen: (Int) -> Unit,
-    selectedScreen: Int
+    selectedScreen: Int,
 ) {
     Scaffold(
         topBar = { TopBar() },
         floatingActionButtonPosition = FabPosition.End,
         floatingActionButton = {
-            if (!currentlyRecording)
-                ExtendedFloatingActionButton(
-                    text = { Text("Record") },
-                    onClick = onStartRecord,
-                    icon = { Icon(imageVector = Icons.Default.Add, contentDescription = "Record") },
-                    shape = RoundedCornerShape(16.dp)
-                )
-            else
-                ExtendedFloatingActionButton(
-                    text = { Text("Stop Recording") },
-                    onClick = onStopRecord,
-                    icon = { Icon(imageVector = Icons.Default.Stop, contentDescription = "Stop") }
-                )
-        }
+            ExtendedFloatingActionButton(
+                text =
+                { Text(if (!currentlyRecording) "Record" else "Stop Recording") },
+                onClick = if (!currentlyRecording) onStartRecord else onStopRecord,
+                icon =
+                {
+                    Crossfade(targetState = currentlyRecording) {
+                        Icon(
+                            imageVector = if (!it) Icons.Default.Add else Icons.Default.Stop,
+                            contentDescription = if (!it) "Record" else "Stop Recording"
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.animateContentSize()
+            )
+        },
     ) {
         Column (Modifier.fillMaxSize()) {
             Spacer(modifier = Modifier.height(8.dp))
-            BigButtonRow {
-                BigButton(
-                    onClick = { onSelectScreen(0) },
-                    selected = selectedScreen == 0,
-                    text = "Recordings",
-                    icon = Icons.Default.MicExternalOn
-                )
-                BigButton(
-                    onClick = { onSelectScreen(1) },
-                    selected = selectedScreen == 1,
-                    text = "Groups",
-                    icon = Icons.Default.Inventory2
-                )
+            Surface {
+                BigButtonRow {
+                    BigButton(
+                        onClick = { onSelectScreen(0) },
+                        selected = selectedScreen == 0,
+                        text = "Recordings",
+                        icon = Icons.Default.MicExternalOn
+                    )
+                    BigButton(
+                        onClick = { onSelectScreen(1) },
+                        selected = selectedScreen == 1,
+                        text = "Groups",
+                        icon = Icons.Default.Inventory2
+                    )
+                }
             }
 
             when (selectedScreen) {
                 else ->
                     RecordingsList(
                         recordings = recordings,
-                        onSelectRecording = { /*TODO*/ }
+                        onSelectRecording = { /*TODO*/ },
+                        onAddRecordingTag = onAddRecordingTag
                     )
             }
         }
@@ -83,7 +84,7 @@ fun MainScreen(
 
 @Composable
 fun TopBar () {
-    var moreMenuExpanded by remember { mutableStateOf(true) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
         modifier = Modifier.height(60.dp),
@@ -94,10 +95,7 @@ fun TopBar () {
             "micCheck",
             style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)) },
         actions = {
-            Box(
-                Modifier
-                    .wrapContentSize(Alignment.TopEnd)
-            ) {
+            Box {
                 IconButton(onClick = {
                     moreMenuExpanded = true
                 }) {
@@ -127,105 +125,6 @@ fun TopBar () {
     )
 }
 
-@Composable
-fun RecordingsList (
-    recordings: List<Recording>,
-    onSelectRecording: () -> Unit
-) {
-    Column(Modifier.fillMaxSize()) {
-        LazyColumn (Modifier.fillMaxSize()) {
-            itemsIndexed(recordings) { index, item ->
-                if (index == 0)
-                    RecordingElm(item, Modifier.padding(12.dp, 24.dp, 12.dp, 12.dp))
-                else
-                    RecordingElm(item, Modifier.padding(12.dp, 0.dp, 12.dp, 12.dp))
-            }
-        }
-    }
-}
-
-/**
- * Temporary Debug info
- * Intended params:
- *      - Tags
- *      - Group affil
- *      - Duration
- *      - Description indicator icon
- */
-@Composable
-fun RecordingElm(
-    rec: Recording,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        elevation = 8.dp,
-        modifier = modifier,
-        shape = RoundedCornerShape(30)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(18.dp, 18.dp, 0.dp, 18.dp)
-        ) {
-
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column {
-                    Row {
-                        Text(
-                            rec.name,
-                            style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.ExtraBold)
-                        )
-                        Text(
-                            " - " +
-                                    (
-                                            (   //hours
-                                                    if (((rec.duration / 1000) / 60) / 60 > 0)
-                                                        (((rec.duration / 1000) / 360).toString() + ":")
-                                                    else
-                                                        ""
-                                                    ) + //minutes
-                                                    ((rec.duration / 1000) / 60) % 60) + ":" +
-                                    //seconds
-                                    ((rec.duration / 1000) % 60).toString(),
-                            style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.Normal)
-                        )
-                    }
-
-                    Text(
-                        "Recorded " + rec.date.format(
-                            DateTimeFormatter.ofPattern("LLLL d, h:mm a")
-                                .withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault())
-                        )
-                    )
-                }
-
-                IconButton(
-                    onClick = { /*TODO*/ },
-                    modifier = Modifier
-                        .padding(0.dp, 0.dp, 18.dp, 0.dp)
-                        .align(Alignment.CenterVertically)
-                ) {
-                    Icon(Icons.Default.MoreVert, "More Option - Recording")
-                }
-            }
-
-            if (rec.data.tags.isNotEmpty())
-                Spacer(Modifier.height(8.dp))
-            LazyRow {
-                itemsIndexed(rec.data.tags.subList(0, min(rec.data.tags.size, 4))) { _, item ->
-                    Chip(
-                        text = item.name,
-                        onClick = { }
-                    )
-                }
-            }
-        }
-    }
-}
-
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
 @Preview
@@ -236,6 +135,9 @@ fun MainScreenPreview () {
     }
     val onSelectScreen: (Int) -> Unit = {
         sel = it
+    }
+    var recording by remember {
+        mutableStateOf(false)
     }
 
     MicCheckTheme {
@@ -256,10 +158,11 @@ fun MainScreenPreview () {
                     Recording(Uri.EMPTY, "Placeholder 2", 0, 0),
                     Recording(Uri.EMPTY, "Placeholder 3", 0, 0),
                 ),
-                currentlyRecording = true,
-                onStartRecord = { /*TODO*/ },
-                onStopRecord = { /*TODO*/ },
+                currentlyRecording = recording,
+                onStartRecord = { recording = true },
+                onStopRecord = { recording = false },
                 onSelectRecording = { /*TODO*/ },
+                onAddRecordingTag = { /*TODO*/ },
                 onSelectScreen = onSelectScreen,
                 selectedScreen = sel
             )

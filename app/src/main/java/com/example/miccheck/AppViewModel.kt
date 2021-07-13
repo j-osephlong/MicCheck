@@ -6,12 +6,14 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import java.time.Instant
 import java.time.ZoneId
+import kotlin.random.Random
 
 class AppViewModel : ViewModel() {
     var currentPlayBack by mutableStateOf(false)
@@ -19,19 +21,21 @@ class AppViewModel : ViewModel() {
     var currentlyRecording by mutableStateOf(false)
     var selectedScreen by mutableStateOf(0)
 
-    var recordings by mutableStateOf(
-        listOf<Recording>(
-            Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0)
-        )
-    )
-    var groups by mutableStateOf(
-        listOf<RecordingGroup>(
-            RecordingGroup("PLACEHOLDER", listOf(), null, Color.White)
-        )
-    )
+    var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
+    var groups = mutableStateListOf(RecordingGroup("PLACEHOLDER", listOf(), null, Color.White))
 
     fun setScreen(screen: Int) {
         selectedScreen = screen
+    }
+
+    fun addTagToRecording(uri: Uri) {
+        val rec = recordings.filter {
+            it.uri == uri
+        }[0]
+        val index = recordings.indexOf(rec)
+        rec.data.tags += Tag(Random.nextInt().toString())
+
+        recordings[index] = rec
     }
 
     suspend fun loadRecordings(context: Context) {
@@ -59,7 +63,7 @@ class AppViewModel : ViewModel() {
             sortOrder
         )
 
-        recordings = listOf()
+        recordings.removeRange(0, recordings.size)
 
         query?.use { cursor ->
             // Cache column indices.
@@ -86,8 +90,12 @@ class AppViewModel : ViewModel() {
 
                 // Stores column values and the contentUri in a local object
                 // that represents the media file.
-                recordings = recordings + Recording(contentUri, name, duration, size,
-                    date = Instant.ofEpochMilli(date).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                recordings.add(
+                    Recording(
+                        contentUri, name, duration, size,
+                        date = Instant.ofEpochMilli(date).atZone(ZoneId.systemDefault())
+                            .toLocalDateTime()
+                    )
                 )
             }
         }

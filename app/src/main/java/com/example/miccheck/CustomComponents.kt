@@ -108,9 +108,10 @@ fun BigButton(
 
 @Composable
 fun BigButtonRow(
+    modifier: Modifier = Modifier,
     buttons: @Composable () -> Unit
 ) {
-    Row (modifier = Modifier.horizontalScroll(rememberScrollState())) {
+    Row(modifier = modifier.horizontalScroll(rememberScrollState())) {
         Spacer(Modifier.width(12.dp))
         buttons()
     }
