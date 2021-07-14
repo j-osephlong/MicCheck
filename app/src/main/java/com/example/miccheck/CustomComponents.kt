@@ -26,7 +26,7 @@ fun Chip(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colors.surface,
+    color: Color = MaterialTheme.colors.surface.copy(alpha = .2f),
     contentColor: Color = MaterialTheme.colors.onSurface
 ) {
     Row {
@@ -52,7 +52,7 @@ fun BigButton(
     text: String,
     icon: ImageVector,
     enabledColor: Color = Color.Black,
-    disabledColor: Color = Color.LightGray,
+    disabledColor: Color = Color.White,
     enabledTextColor: Color = Color.White,
     disabledTextColor: Color = Color.Black,
 ) {

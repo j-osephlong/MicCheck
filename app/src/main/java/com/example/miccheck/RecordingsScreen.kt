@@ -1,11 +1,12 @@
 package com.example.miccheck
 
 import android.net.Uri
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -14,29 +15,108 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 import kotlin.math.min
 
+@ExperimentalFoundationApi
+@ExperimentalMaterialApi
 @Composable
 fun RecordingsList(
-    recordings: List<Recording>,
-    onSelectRecording: () -> Unit,
+    recordings: Map<RecordingKey, List<Recording>>,
+    currentPlaybackRec: Recording?,
+    onStartPlayback: (Recording) -> Unit,
+    onStopPlayback: () -> Unit,
     onAddRecordingTag: (Uri) -> Unit
 ) {
+//    var currDate: LocalDateTime = LocalDateTime.now().plusDays(1)
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(recordings) { index, item ->
-                RecordingElm(
-                    item,
-                    (if (index == 0)
-                        Modifier.padding(12.dp, 24.dp, 12.dp, 12.dp)
-                    else
-                        Modifier.padding(12.dp, 0.dp, 12.dp, 12.dp)),
-                    onAddTag = onAddRecordingTag
-                )
+            recordings.forEach { (_, recordings) ->
+                stickyHeader {
+                    DateHeader(recordings[0].date)
+                }
+
+                itemsIndexed(recordings, key = { _, rec -> rec.uri }) { index, item ->
+                    if (index == 0)
+                        Spacer(modifier = Modifier.height(0.dp))
+                    Column {
+                        RecordingElm(
+                            item,
+                            onAddTag = onAddRecordingTag,
+                            onClick = {
+                                if (item == currentPlaybackRec)
+                                    onStopPlayback()
+                                else
+                                    onStartPlayback(item)
+                            }
+                        )
+                        if (index != recordings.size - 1)
+                            Divider(Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp))
+                    }
+                }
             }
+
+//            itemsIndexed(recordings, key = { _, rec -> rec.uri }) { index, item ->
+//                if (index == 0)
+//                    DateHeader(item.date)
+//                else if (
+//                    item.date.dayOfMonth != recordings[index-1].date.dayOfMonth ||
+//                    item.date.month != recordings[index-1].date.month           ||
+//                    item.date.year != recordings[index-1].date.year)
+//                {
+//                    DateHeader(item.date)
+//                }
+//                currDate = item.date
+//                RecordingElm(
+//                    item,
+//                    onAddTag = onAddRecordingTag,
+//                    onClick = {
+//                        if (item == currentPlaybackRec)
+//                            onStopPlayback()
+//                        else
+//                            onStartPlayback(item)
+//                    }
+//                )
+//            }
+        }
+    }
+}
+
+@Composable
+fun DateHeader(date: LocalDateTime) {
+    Surface(
+        color = MaterialTheme.colors.background,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(18.dp, 0.dp, 0.dp, 8.dp)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+        ) {
+            Text(
+                date.format(
+                    DateTimeFormatter.ofPattern("LLLL d")
+                        .withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault())
+                ) +
+                        when (date.dayOfMonth % 10) {
+                            1 -> if (date.dayOfMonth == 11) "th" else "st"
+                            2 -> if (date.dayOfMonth == 12) "th" else "nd"
+                            3 -> if (date.dayOfMonth == 13) "th" else "rd"
+                            else -> "th"
+                        } +
+                        date.format(
+                            DateTimeFormatter.ofPattern(", yyyy")
+                                .withLocale(Locale.getDefault())
+                                .withZone(ZoneId.systemDefault())
+                        ),
+                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold)
+            )
+            Spacer(Modifier.height(8.dp))
+            Divider()
         }
     }
 }
@@ -62,11 +142,13 @@ fun RecordingMenu(
     }
 }
 
+@ExperimentalMaterialApi
 @Composable
 fun RecordingElm(
     rec: Recording,
     modifier: Modifier = Modifier,
-    onAddTag: (Uri) -> Unit
+    onAddTag: (Uri) -> Unit,
+    onClick: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val onDismissMenu = {
@@ -74,13 +156,13 @@ fun RecordingElm(
     }
 
     Card(
-        elevation = 4.dp,
-        modifier = modifier,
-        shape = RoundedCornerShape(30)
+        elevation = 0.dp,
+        onClick = onClick,
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .animateContentSize()
                 .padding(18.dp, 18.dp, 0.dp, 18.dp)
         ) {
 
@@ -92,20 +174,18 @@ fun RecordingElm(
                     Row {
                         Text(
                             rec.name,
-                            style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.ExtraBold)
+                            style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Text(
                             " - " +
                                     (
-                                            (   //hours
-                                                    if (((rec.duration / 1000) / 60) / 60 > 0)
-                                                        (((rec.duration / 1000) / 360).toString() + ":")
-                                                    else
-                                                        ""
-                                                    ) + //minutes
-                                                    ((rec.duration / 1000) / 60) % 60) + ":" +
-                                    //seconds
-                                    ((rec.duration / 1000) % 60).toString(),
+                                            if (((rec.duration / 1000) / 60) / 60 > 0)
+                                                (((rec.duration / 1000) / 360).toString() + ":")
+                                            else
+                                                ""
+                                            ) + //hours
+                                    ((rec.duration / 1000) / 60) % 60 + ":" + //minutes
+                                    ((rec.duration / 1000) % 60).toString(), //seconds
                             style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.Normal)
                         )
                     }

@@ -4,7 +4,7 @@ import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import java.time.LocalDateTime
 
-data class Recording (
+data class Recording(
     val uri: Uri,
     val name: String,
     val duration: Int,
@@ -13,6 +13,15 @@ data class Recording (
     val date: LocalDateTime = LocalDateTime.now(),
     val data: RecordingData = RecordingData(),
 )
+
+data class RecordingKey(
+    val day: Int,
+    val year: Int
+)
+
+fun Recording.toKey(): RecordingKey {
+    return RecordingKey(this.date.dayOfYear, this.date.year)
+}
 
 data class RecordingData(
     var tags: List<Tag> = listOf(),

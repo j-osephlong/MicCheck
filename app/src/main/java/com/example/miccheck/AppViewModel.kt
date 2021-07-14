@@ -16,12 +16,13 @@ import java.time.ZoneId
 import kotlin.random.Random
 
 class AppViewModel : ViewModel() {
-    var currentPlayBack by mutableStateOf(false)
-    var currentPlayBackSrc by mutableStateOf<Uri?>(null)
+    var currentPlayBackRec by mutableStateOf<Recording?>(null)
     var currentlyRecording by mutableStateOf(false)
     var selectedScreen by mutableStateOf(0)
 
     var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
+    val recordingsGrouped: Map<RecordingKey, List<Recording>>
+        get() = recordings.groupBy { it.toKey() }
     var groups = mutableStateListOf(RecordingGroup("PLACEHOLDER", listOf(), null, Color.White))
 
     fun setScreen(screen: Int) {
@@ -36,6 +37,10 @@ class AppViewModel : ViewModel() {
         rec.data.tags += Tag(Random.nextInt().toString())
 
         recordings[index] = rec
+    }
+
+    fun setCurrentPlayback(rec: Recording?) {
+        currentPlayBackRec = rec
     }
 
     suspend fun loadRecordings(context: Context) {
