@@ -1,6 +1,8 @@
 # MicCheck
 WIP Audio Recorder / Organizer - A gallery for recordings
 
+[Current UI](screenshots/current UI.jpg)
+
 # NOTE ABOUT THE APP - 
 
 Not functional enough for installation yet. Currently efforts are being made on UI and core functionality.
