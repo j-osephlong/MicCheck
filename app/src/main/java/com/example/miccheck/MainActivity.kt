@@ -32,7 +32,6 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import kotlin.random.Random
 
-
 class MainActivity : ComponentActivity() {
     private val mainActivityVM by viewModels<AppViewModel>()
     private var recorder: MediaRecorder? = null
@@ -93,9 +92,10 @@ class MainActivity : ComponentActivity() {
                 Surface(color = Color(0xfffbe9e7)) {
                     MainScreen(
                         recordings = mainActivityVM.recordingsGrouped,
-                        currentlyRecording = mainActivityVM.currentlyRecording,
+                        recordingState = mainActivityVM.recordingState,
                         currentPlaybackRec = mainActivityVM.currentPlayBackRec,
                         onStartRecord = { onStartRecord() },
+                        onPausePlayRecord = { onPausePlayRecord() },
                         onStopRecord = {
                             coroutineScope.launch {
                                 onStopRecord()
@@ -165,7 +165,20 @@ class MainActivity : ComponentActivity() {
 
             start()
         }
-        mainActivityVM.currentlyRecording = true
+        mainActivityVM.recordingState = RecordingState.RECORDING
+    }
+
+    private fun onPausePlayRecord() {
+        recorder?.apply {
+            if (mainActivityVM.recordingState == RecordingState.RECORDING)
+                pause()
+            else if (mainActivityVM.recordingState == RecordingState.PAUSED)
+                resume()
+        }
+        if (mainActivityVM.recordingState != RecordingState.WAITING)
+            mainActivityVM.recordingState =
+                if (mainActivityVM.recordingState == RecordingState.PAUSED) RecordingState.RECORDING
+                else RecordingState.PAUSED
     }
 
     private suspend fun onStopRecord() {
@@ -180,7 +193,7 @@ class MainActivity : ComponentActivity() {
         }
         currentOutputFile = null
 
-        mainActivityVM.currentlyRecording = false
+        mainActivityVM.recordingState = RecordingState.WAITING
     }
 
 

@@ -15,11 +15,16 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlin.random.Random
 
+enum class RecordingState {
+    RECORDING, PAUSED, WAITING
+}
+
 class AppViewModel : ViewModel() {
     var currentPlayBackRec by mutableStateOf<Recording?>(null)
-    var currentlyRecording by mutableStateOf(false)
+        private set
+    var recordingState by mutableStateOf(RecordingState.WAITING)
     var selectedScreen by mutableStateOf(0)
-
+        private set
     var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
     val recordingsGrouped: Map<RecordingKey, List<Recording>>
         get() = recordings.groupBy { it.toKey() }

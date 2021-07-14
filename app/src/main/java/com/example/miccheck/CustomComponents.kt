@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -44,9 +45,52 @@ fun Chip(
     }
 }
 
+@Composable
+fun LargeButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            backgroundColor = MaterialTheme.colors.primaryVariant,
+            contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
+        ),
+        shape = RoundedCornerShape(40)
+    ) {
+        Box(Modifier.padding(24.dp, 12.dp)) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun CircleButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            backgroundColor = MaterialTheme.colors.primaryVariant.copy(
+                alpha = .25f
+            ),
+            contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
+        ),
+        shape = CircleShape,
+        elevation = ButtonDefaults.elevation(
+            0.dp, 0.dp, 0.dp
+        ),
+        modifier = Modifier.size(50.dp),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        content()
+    }
+}
+
 @ExperimentalAnimationApi
 @Composable
-fun BigButton(
+fun ScreenSelectButton(
     onClick: () -> Unit,
     selected: Boolean,
     text: String,
@@ -107,7 +151,7 @@ fun BigButton(
 }
 
 @Composable
-fun BigButtonRow(
+fun ScreenSelectRow(
     modifier: Modifier = Modifier,
     buttons: @Composable () -> Unit
 ) {
@@ -142,14 +186,14 @@ fun ButtonPreview () {
         sel = it
     }
     Surface (Modifier.fillMaxWidth()) {
-        BigButtonRow {
-            BigButton(
+        ScreenSelectRow {
+            ScreenSelectButton(
                 onClick = { onClick(0) },
                 selected = sel == 0,
                 text = "Recordings",
                 icon = Icons.Default.MicExternalOn
             )
-            BigButton(
+            ScreenSelectButton(
                 onClick = { onClick(1) },
                 selected = sel == 1,
                 text = "Groups",

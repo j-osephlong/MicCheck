@@ -10,6 +10,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -24,9 +25,10 @@ import java.time.LocalDateTime
 @Composable
 fun MainScreen(
     recordings: Map<RecordingKey, List<Recording>>,
-    currentlyRecording: Boolean,
+    recordingState: RecordingState,
     currentPlaybackRec: Recording?,
     onStartRecord: () -> Unit,
+    onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
     onStartPlayback: (Recording) -> Unit,
     onStopPlayback: () -> Unit,
@@ -42,6 +44,9 @@ fun MainScreen(
     val onOpenRecord = {
         recordBackdropOpen = true
     }
+    val onCloseRecord = {
+        recordBackdropOpen = false
+    }
 
     LaunchedEffect(key1 = recordBackdropOpen || currentPlaybackRec != null)
     {
@@ -55,12 +60,12 @@ fun MainScreen(
         scaffoldState = backdropScaffoldState,
         gesturesEnabled = recordBackdropOpen || currentPlaybackRec != null,
         peekHeight = 72.dp,
-        frontLayerElevation = 12.dp,
+        frontLayerElevation = 8.dp,
         frontLayerShape = RoundedCornerShape(22.dp, 0.dp, 0.dp, 0.dp),
         frontLayerBackgroundColor = MaterialTheme.colors.background,
         appBar = {
             TopBar(
-                currentlyRecording = currentlyRecording,
+                recordingState = recordingState,
                 onOpenRecord = onOpenRecord
             )
         },
@@ -68,14 +73,14 @@ fun MainScreen(
         {
             Column(Modifier.fillMaxSize()) {
                 Spacer(modifier = Modifier.height(18.dp))
-                BigButtonRow {
-                    BigButton(
+                ScreenSelectRow {
+                    ScreenSelectButton(
                         onClick = { onSelectScreen(0) },
                         selected = selectedScreen == 0,
                         text = "Recordings",
                         icon = Icons.Default.MicExternalOn
                     )
-                    BigButton(
+                    ScreenSelectButton(
                         onClick = { onSelectScreen(1) },
                         selected = selectedScreen == 1,
                         text = "Groups",
@@ -96,7 +101,7 @@ fun MainScreen(
                 }
             }
         },
-        backLayerBackgroundColor = Color(0xfffbe9e7),
+        backLayerBackgroundColor = MaterialTheme.colors.primary,
         backLayerContent = {
             if (currentPlaybackRec != null) {
                 Button(onClick = { onStopPlayback() }) {
@@ -105,9 +110,10 @@ fun MainScreen(
             } else if (recordBackdropOpen) {
                 RecordingBackdrop(
                     onStartRecord = onStartRecord,
-                    onPausePlay = { /*TODO*/ },
+                    onPausePlayRecord = onPausePlayRecord,
                     onStopRecord = { onStopRecord(); recordBackdropOpen = false },
-                    currentlyRecording = currentlyRecording
+                    onCancel = onCloseRecord,
+                    recordingState = recordingState
                 )
             }
         }
@@ -117,42 +123,62 @@ fun MainScreen(
 @Composable
 fun RecordingBackdrop(
     onStartRecord: () -> Unit,
-    onPausePlay: () -> Unit,
+    onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
-    currentlyRecording: Boolean
+    onCancel: () -> Unit,
+    recordingState: RecordingState
 ) {
-    val (titleText, setTitleText) = remember { mutableStateOf("") }
+    val (titleText, setTitleText) = remember { mutableStateOf("New Recording") }
     val (descText, setDescText) = remember { mutableStateOf("") }
 
-    Column(Modifier.padding(12.dp)) {
+    Column(Modifier.padding(12.dp, 0.dp, 12.dp, 18.dp)) {
         TextField(
             value = titleText,
             setTitleText,
-            textStyle = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.fillMaxWidth(),
+            colors =
+            TextFieldDefaults.textFieldColors(
+                backgroundColor = MaterialTheme.colors.primaryVariant.copy(
+                    alpha = .25f
+                ),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
+            ),
+            shape = RoundedCornerShape(40),
+            textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
         )
-        Spacer(Modifier.height(12.dp))
-        TextField(
-            value = descText,
-            setDescText,
-            singleLine = false,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(.3f)
-        )
-        Spacer(Modifier.height(12.dp))
-        Crossfade(targetState = currentlyRecording) {
-            if (it) {
-                Row {
-                    IconButton(onClick = onPausePlay) {
-                        Icon(Icons.Default.Pause, "Pause")
+        Spacer(Modifier.height(24.dp))
+        Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LargeButton(
+                    onClick =
+                    when (recordingState) {
+                        RecordingState.WAITING -> onStartRecord
+                        RecordingState.RECORDING, RecordingState.PAUSED -> onStopRecord
                     }
-                    IconButton(onClick = onStopRecord) {
-                        Icon(Icons.Default.Stop, "Stop")
+                ) {
+                    Crossfade(targetState = recordingState) {
+                        if (it == RecordingState.WAITING)
+                            Icon(Icons.Default.Mic, "Record")
+                        else if (it == RecordingState.RECORDING || it == RecordingState.PAUSED)
+                            Icon(Icons.Default.Stop, "Stop")
                     }
                 }
-            } else {
-                IconButton(onClick = onStartRecord) {
-                    Icon(Icons.Default.RadioButtonChecked, "Record")
+                Spacer(Modifier.width(8.dp))
+                CircleButton(
+                    onClick =
+                    when (recordingState) {
+                        RecordingState.WAITING -> onCancel
+                        RecordingState.RECORDING, RecordingState.PAUSED -> onPausePlayRecord
+                    }
+                ) {
+                    Crossfade(targetState = recordingState) {
+                        when (it) {
+                            RecordingState.WAITING -> Icon(Icons.Default.Close, "Cancel")
+                            RecordingState.RECORDING -> Icon(Icons.Default.Pause, "Pause")
+                            else -> Icon(Icons.Default.Mic, "Continue Recording")
+                        }
+                    }
                 }
             }
         }
@@ -183,14 +209,14 @@ floatingActionButtonPosition = FabPosition.End,
 
 @Composable
 fun TopBar(
-    currentlyRecording: Boolean,
+    recordingState: RecordingState,
     onOpenRecord: () -> Unit,
 ) {
     var moreMenuExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
         modifier = Modifier.height(71.dp),
-        backgroundColor = Color(0xfffbe9e7),
+        backgroundColor = MaterialTheme.colors.primary,
         elevation = 0.dp,
         contentColor = MaterialTheme.colors.onBackground,
         title = {
@@ -242,12 +268,28 @@ fun TopBar(
     )
 }
 
+@Preview
+@Composable
+fun RecordingControlsPreview() {
+    MicCheckTheme {
+        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colors.primary) {
+            RecordingBackdrop(
+                onStartRecord = { /*TODO*/ },
+                onPausePlayRecord = { /*TODO*/ },
+                onStopRecord = { /*TODO*/ },
+                onCancel = { },
+                recordingState = RecordingState.PAUSED
+            )
+        }
+    }
+}
+
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
 @Preview
 @Composable
-fun MainScreenPreview () {
+fun MainScreenPreview() {
     var sel by remember {
         mutableStateOf(0)
     }
@@ -255,7 +297,7 @@ fun MainScreenPreview () {
         sel = it
     }
     var recording by remember {
-        mutableStateOf(false)
+        mutableStateOf(RecordingState.WAITING)
     }
 
     MicCheckTheme {
@@ -277,10 +319,11 @@ fun MainScreenPreview () {
                     Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0),
                     Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0),
                 ).groupBy { it.toKey() },
-                currentlyRecording = recording,
+                recordingState = recording,
                 currentPlaybackRec = null,
-                onStartRecord = { recording = true },
-                onStopRecord = { recording = false },
+                onStartRecord = { recording = RecordingState.RECORDING },
+                onPausePlayRecord = { },
+                onStopRecord = { recording = RecordingState.WAITING },
                 onStartPlayback = { /*TODO*/ },
                 onStopPlayback = { /*TODO*/ },
                 onAddRecordingTag = { /*TODO*/ },
