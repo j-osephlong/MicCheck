@@ -91,7 +91,8 @@ class MainActivity : ComponentActivity() {
                 // A surface container using the 'background' color from the theme
                 Surface(color = Color(0xfffbe9e7)) {
                     MainScreen(
-                        recordings = mainActivityVM.recordingsGrouped,
+                        recordings = mainActivityVM.recordings,
+                        recordingsData = mainActivityVM.recordingsData,
                         recordingState = mainActivityVM.recordingState,
                         currentPlaybackRec = mainActivityVM.currentPlayBackRec,
                         onStartRecord = { onStartRecord() },
@@ -99,6 +100,12 @@ class MainActivity : ComponentActivity() {
                         onStopRecord = {
                             coroutineScope.launch {
                                 onStopRecord()
+                            }
+                        },
+                        onFinishedRecording = { title, desc ->
+                            mainActivityVM.onRecordingFinished(applicationContext, title, desc)
+                            coroutineScope.launch {
+                                mainActivityVM.loadRecordings(applicationContext)
                             }
                         },
                         onStartPlayback = {
@@ -147,8 +154,9 @@ class MainActivity : ComponentActivity() {
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             values
         )
-        currentOutputFile = applicationContext.contentResolver.openFileDescriptor(audioUri!!, "w")
 
+        currentOutputFile = applicationContext.contentResolver.openFileDescriptor(audioUri!!, "w")
+        mainActivityVM.currentRecordingUri = audioUri
         recorder = MediaRecorder().apply {
             setAudioSource(MediaRecorder.AudioSource.DEFAULT)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -189,11 +197,10 @@ class MainActivity : ComponentActivity() {
         recorder = null
         withContext(Dispatchers.IO) {
             currentOutputFile!!.close()
-            mainActivityVM.loadRecordings(applicationContext)
         }
         currentOutputFile = null
 
-        mainActivityVM.recordingState = RecordingState.WAITING
+        mainActivityVM.recordingState = RecordingState.STOPPED
     }
 
 

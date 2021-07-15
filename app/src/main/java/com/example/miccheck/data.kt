@@ -2,6 +2,7 @@ package com.example.miccheck
 
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
+import kotlinx.serialization.Serializable
 import java.time.LocalDateTime
 
 data class Recording(
@@ -11,7 +12,6 @@ data class Recording(
     // in bytes
     val size: Int,
     val date: LocalDateTime = LocalDateTime.now(),
-    val data: RecordingData = RecordingData(),
 )
 
 data class RecordingKey(
@@ -23,9 +23,11 @@ fun Recording.toKey(): RecordingKey {
     return RecordingKey(this.date.dayOfYear, this.date.year)
 }
 
+@Serializable
 data class RecordingData(
+    var recordingUri: String,
     var tags: List<Tag> = listOf(),
-    var description: String = "",
+    var description: String = ""
 )
 
 data class RecordingGroup(
@@ -35,6 +37,7 @@ data class RecordingGroup(
     var fallbackColor: Color = Color.White
 )
 
+@Serializable
 data class Tag(
     var name: String,
     val isGroupTag: Boolean = false

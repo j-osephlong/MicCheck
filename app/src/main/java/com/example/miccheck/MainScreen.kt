@@ -1,8 +1,7 @@
 package com.example.miccheck
 
 import android.net.Uri
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,15 +23,17 @@ import java.time.LocalDateTime
 @ExperimentalAnimationApi
 @Composable
 fun MainScreen(
-    recordings: Map<RecordingKey, List<Recording>>,
+    recordings: List<Recording>,
+    recordingsData: List<RecordingData>,
     recordingState: RecordingState,
     currentPlaybackRec: Recording?,
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
+    onFinishedRecording: (String, String) -> Unit,
     onStartPlayback: (Recording) -> Unit,
     onStopPlayback: () -> Unit,
-    onAddRecordingTag: (Uri) -> Unit,
+    onAddRecordingTag: (Recording) -> Unit,
     onSelectScreen: (Int) -> Unit,
     selectedScreen: Int,
 ) {
@@ -93,6 +94,7 @@ fun MainScreen(
                     else ->
                         RecordingsList(
                             recordings = recordings,
+                            recordingsData = recordingsData,
                             currentPlaybackRec = currentPlaybackRec,
                             onStartPlayback = onStartPlayback,
                             onStopPlayback = onStopPlayback,
@@ -111,7 +113,13 @@ fun MainScreen(
                 RecordingBackdrop(
                     onStartRecord = onStartRecord,
                     onPausePlayRecord = onPausePlayRecord,
-                    onStopRecord = { onStopRecord(); recordBackdropOpen = false },
+                    onStopRecord = onStopRecord,
+                    onFinishedRecording = { title, desc ->
+                        onFinishedRecording(
+                            title,
+                            desc
+                        ); recordBackdropOpen = false
+                    },
                     onCancel = onCloseRecord,
                     recordingState = recordingState
                 )
@@ -120,18 +128,24 @@ fun MainScreen(
     )
 }
 
+@ExperimentalAnimationApi
 @Composable
 fun RecordingBackdrop(
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
+    onFinishedRecording: (String, String) -> Unit,
     onCancel: () -> Unit,
     recordingState: RecordingState
 ) {
     val (titleText, setTitleText) = remember { mutableStateOf("New Recording") }
     val (descText, setDescText) = remember { mutableStateOf("") }
 
-    Column(Modifier.padding(12.dp, 0.dp, 12.dp, 18.dp)) {
+    Column(
+        Modifier
+            .padding(12.dp, 0.dp, 12.dp, 18.dp)
+            .animateContentSize()
+    ) {
         TextField(
             value = titleText,
             setTitleText,
@@ -142,41 +156,94 @@ fun RecordingBackdrop(
                     alpha = .25f
                 ),
                 focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Color.Black
             ),
             shape = RoundedCornerShape(40),
             textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
+        AnimatedVisibility(visible = recordingState == RecordingState.PAUSED || recordingState == RecordingState.STOPPED) {
+            TextField(
+                value = descText,
+                setDescText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(.25f),
+                label = { Text("Description") },
+                colors =
+                TextFieldDefaults.textFieldColors(
+                    backgroundColor = MaterialTheme.colors.primaryVariant.copy(
+                        alpha = .25f
+                    ),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = Color.Black
+                ),
+                singleLine = false,
+                shape = RoundedCornerShape(14.dp),
+                textStyle = MaterialTheme.typography.body1,
+            )
+        }
+        Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LargeButton(
-                    onClick =
-                    when (recordingState) {
-                        RecordingState.WAITING -> onStartRecord
-                        RecordingState.RECORDING, RecordingState.PAUSED -> onStopRecord
+            Row(modifier = Modifier.animateContentSize()) {
+                Row(Modifier.padding(0.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LargeButton(
+                        onClick =
+                        {
+                            when (recordingState) {
+                                RecordingState.WAITING -> {
+                                    onStartRecord()
+                                }
+                                RecordingState.RECORDING, RecordingState.PAUSED -> {
+                                    onStopRecord()
+                                }
+                                RecordingState.STOPPED -> {
+                                    onFinishedRecording(titleText, descText)
+                                }
+                            }
+                        }
+                    ) {
+                        Crossfade(targetState = recordingState) {
+                            when (it) {
+                                RecordingState.WAITING -> Icon(Icons.Default.Mic, "Record")
+                                RecordingState.RECORDING, RecordingState.PAUSED -> Icon(
+                                    Icons.Default.Stop,
+                                    "Stop"
+                                )
+                                RecordingState.STOPPED -> Icon(Icons.Default.Check, "Done")
+                            }
+                        }
                     }
-                ) {
-                    Crossfade(targetState = recordingState) {
-                        if (it == RecordingState.WAITING)
-                            Icon(Icons.Default.Mic, "Record")
-                        else if (it == RecordingState.RECORDING || it == RecordingState.PAUSED)
-                            Icon(Icons.Default.Stop, "Stop")
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                CircleButton(
-                    onClick =
-                    when (recordingState) {
-                        RecordingState.WAITING -> onCancel
-                        RecordingState.RECORDING, RecordingState.PAUSED -> onPausePlayRecord
-                    }
-                ) {
-                    Crossfade(targetState = recordingState) {
-                        when (it) {
-                            RecordingState.WAITING -> Icon(Icons.Default.Close, "Cancel")
-                            RecordingState.RECORDING -> Icon(Icons.Default.Pause, "Pause")
-                            else -> Icon(Icons.Default.Mic, "Continue Recording")
+                    AnimatedVisibility(
+                        visible = recordingState != RecordingState.STOPPED,
+                        enter = slideInHorizontally(),
+                        exit = slideOutHorizontally()
+                    ) {
+                        Row {
+                            Spacer(Modifier.width(8.dp))
+                            CircleButton(
+                                onClick =
+                                when (recordingState) {
+                                    RecordingState.WAITING -> onCancel
+                                    else -> onPausePlayRecord
+                                }
+                            ) {
+                                Crossfade(targetState = recordingState) {
+                                    when (it) {
+                                        RecordingState.WAITING -> Icon(
+                                            Icons.Default.Close,
+                                            "Cancel"
+                                        )
+                                        RecordingState.RECORDING -> Icon(
+                                            Icons.Default.Pause,
+                                            "Pause"
+                                        )
+                                        else -> Icon(Icons.Default.Mic, "Continue Recording")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -268,6 +335,7 @@ fun TopBar(
     )
 }
 
+@ExperimentalAnimationApi
 @Preview
 @Composable
 fun RecordingControlsPreview() {
@@ -277,8 +345,9 @@ fun RecordingControlsPreview() {
                 onStartRecord = { /*TODO*/ },
                 onPausePlayRecord = { /*TODO*/ },
                 onStopRecord = { /*TODO*/ },
+                onFinishedRecording = { _, _ -> },
                 onCancel = { },
-                recordingState = RecordingState.PAUSED
+                recordingState = RecordingState.STOPPED
             )
         }
     }
@@ -306,24 +375,22 @@ fun MainScreenPreview() {
                 recordings = listOf(
                     Recording(
                         Uri.EMPTY, "Placeholder 1", 150000, 0,
-                        data = RecordingData(
-                            tags = listOf(
-                                Tag("Tag"),
-                                Tag("Tag1"),
-                                Tag("Tag2"),
-                                Tag("Tag3Tag3Tag3Tag3"),
-                            )
-                        ),
                         date = LocalDateTime.now().plusDays(1)
                     ),
                     Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0),
                     Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0),
-                ).groupBy { it.toKey() },
+                ),
+                recordingsData = listOf(
+                    RecordingData(Uri.EMPTY.toString()),
+                    RecordingData(Uri.parse("file:///tmp/android.txt").toString()),
+                    RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
+                ),
                 recordingState = recording,
                 currentPlaybackRec = null,
                 onStartRecord = { recording = RecordingState.RECORDING },
                 onPausePlayRecord = { },
                 onStopRecord = { recording = RecordingState.WAITING },
+                onFinishedRecording = { _, _ -> },
                 onStartPlayback = { /*TODO*/ },
                 onStopPlayback = { /*TODO*/ },
                 onAddRecordingTag = { /*TODO*/ },

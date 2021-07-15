@@ -1,6 +1,7 @@
 package com.example.miccheck
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
@@ -9,39 +10,64 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.random.Random
 
 enum class RecordingState {
-    RECORDING, PAUSED, WAITING
+    RECORDING, PAUSED, STOPPED, WAITING
 }
 
 class AppViewModel : ViewModel() {
     var currentPlayBackRec by mutableStateOf<Recording?>(null)
         private set
+    var currentRecordingUri: Uri? = null
     var recordingState by mutableStateOf(RecordingState.WAITING)
     var selectedScreen by mutableStateOf(0)
         private set
     var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
-    val recordingsGrouped: Map<RecordingKey, List<Recording>>
-        get() = recordings.groupBy { it.toKey() }
-    var groups = mutableStateListOf(RecordingGroup("PLACEHOLDER", listOf(), null, Color.White))
+    var recordingsData = mutableStateListOf<RecordingData>()
 
     fun setScreen(screen: Int) {
         selectedScreen = screen
     }
 
-    fun addTagToRecording(uri: Uri) {
-        val rec = recordings.filter {
-            it.uri == uri
-        }[0]
-        val index = recordings.indexOf(rec)
-        rec.data.tags += Tag(Random.nextInt().toString())
+    fun onRecordingFinished(
+        context: Context,
+        title: String,
+        description: String = ""
+    ) {
+        //create recording data
+        if (currentRecordingUri == null)
+            return
 
-        recordings[index] = rec
+        context.contentResolver.update(
+            currentRecordingUri!!,
+            ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, "$title.m4a")
+            },
+            "${MediaStore.Audio.Media._ID} = ?",
+            arrayOf(ContentUris.parseId(currentRecordingUri!!).toString())
+        )
+
+        recordingsData.add(
+            RecordingData(
+                recordingUri = currentRecordingUri.toString(),
+                description = description
+            )
+        )
+        currentRecordingUri = null
+        recordingState = RecordingState.WAITING
+    }
+
+    fun addTagToRecording(recording: Recording) {
+        val recData = recordingsData.filter {
+            Uri.parse(it.recordingUri) == recording.uri
+        }[0]
+        val index = recordingsData.indexOf(recData)
+        recData.tags += Tag(Random.nextInt().toString())
+        recordingsData[index] = recData
     }
 
     fun setCurrentPlayback(rec: Recording?) {
@@ -56,7 +82,7 @@ class AppViewModel : ViewModel() {
         )
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.DATE_MODIFIED
@@ -79,7 +105,7 @@ class AppViewModel : ViewModel() {
             // Cache column indices.
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val nameColumn =
-                cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val durationColumn =
                 cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
@@ -100,6 +126,7 @@ class AppViewModel : ViewModel() {
 
                 // Stores column values and the contentUri in a local object
                 // that represents the media file.
+                Log.e("VM", "Found file " + contentUri)
                 recordings.add(
                     Recording(
                         contentUri, name, duration, size,
@@ -107,6 +134,13 @@ class AppViewModel : ViewModel() {
                             .toLocalDateTime()
                     )
                 )
+
+                if (recordingsData.find { contentUri == Uri.parse(it.recordingUri) } == null)
+                    recordingsData.add(
+                        RecordingData(
+                            contentUri.toString()
+                        )
+                    )
             }
         }
     }

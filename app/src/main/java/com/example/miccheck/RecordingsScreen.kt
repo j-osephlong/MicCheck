@@ -1,6 +1,6 @@
 package com.example.miccheck
 
-import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -19,27 +19,33 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
-import kotlin.math.min
 
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
 @Composable
 fun RecordingsList(
-    recordings: Map<RecordingKey, List<Recording>>,
+    recordings: List<Recording>,
+    recordingsData: List<RecordingData>,
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
     onStopPlayback: () -> Unit,
-    onAddRecordingTag: (Uri) -> Unit
+    onAddRecordingTag: (Recording) -> Unit
 ) {
-//    var currDate: LocalDateTime = LocalDateTime.now().plusDays(1)
+
+    Log.e("RL", "Creating grouped")
+    val rec = recordings.toMutableList().apply { sortByDescending { it.uri.toString() } }
+    val recData =
+        recordingsData.toMutableList().apply { sortByDescending { it.recordingUri } }
+    val recordingsGrouped = rec.zip(recData).groupBy { it.first.toKey() }
+
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize()) {
-            recordings.forEach { (_, recordings) ->
+            recordingsGrouped.forEach { (_, recordings) ->
                 stickyHeader {
-                    DateHeader(recordings[0].date)
+                    DateHeader(recordings[0].first.date)
                 }
 
-                itemsIndexed(recordings, key = { _, rec -> rec.uri }) { index, item ->
+                itemsIndexed(recordings, key = { _, rec -> rec.first.uri }) { index, item ->
                     if (index == 0)
                         Spacer(modifier = Modifier.height(0.dp))
                     Column {
@@ -47,10 +53,10 @@ fun RecordingsList(
                             item,
                             onAddTag = onAddRecordingTag,
                             onClick = {
-                                if (item == currentPlaybackRec)
+                                if (item.first == currentPlaybackRec)
                                     onStopPlayback()
                                 else
-                                    onStartPlayback(item)
+                                    onStartPlayback(item.first)
                             }
                         )
                         if (index != recordings.size - 1)
@@ -145,9 +151,9 @@ fun RecordingMenu(
 @ExperimentalMaterialApi
 @Composable
 fun RecordingElm(
-    rec: Recording,
+    rec: Pair<Recording, RecordingData>,
     modifier: Modifier = Modifier,
-    onAddTag: (Uri) -> Unit,
+    onAddTag: (Recording) -> Unit,
     onClick: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -173,25 +179,25 @@ fun RecordingElm(
                 Column {
                     Row {
                         Text(
-                            rec.name,
+                            rec.first.name,
                             style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Text(
                             " - " +
                                     (
-                                            if (((rec.duration / 1000) / 60) / 60 > 0)
-                                                (((rec.duration / 1000) / 360).toString() + ":")
+                                            if (((rec.first.duration / 1000) / 60) / 60 > 0)
+                                                (((rec.first.duration / 1000) / 360).toString() + ":")
                                             else
                                                 ""
                                             ) + //hours
-                                    ((rec.duration / 1000) / 60) % 60 + ":" + //minutes
-                                    ((rec.duration / 1000) % 60).toString(), //seconds
+                                    ((rec.first.duration / 1000) / 60) % 60 + ":" + //minutes
+                                    ((rec.first.duration / 1000) % 60).toString(), //seconds
                             style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.Normal)
                         )
                     }
 
                     Text(
-                        "Recorded " + rec.date.format(
+                        "Recorded " + rec.first.date.format(
                             DateTimeFormatter.ofPattern("LLLL d, h:mm a")
                                 .withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault())
                         )
@@ -208,19 +214,20 @@ fun RecordingElm(
                     RecordingMenu(
                         expanded = menuExpanded,
                         onDismiss = onDismissMenu,
-                        onAddTag = { onAddTag(rec.uri) }
+                        onAddTag = { onAddTag(rec.first) }
                     )
                 }
             }
 
-            if (rec.data.tags.isNotEmpty())
+            if (rec.second.tags.isNotEmpty())
                 Spacer(Modifier.height(8.dp))
             LazyRow {
-                itemsIndexed(rec.data.tags.subList(0, min(rec.data.tags.size, 4))) { _, item ->
-                    Chip(
-                        text = item.name,
-                        onClick = { }
-                    )
+                itemsIndexed(rec.second.tags) { index, item ->
+                    if (index < 4)
+                        Chip(
+                            text = item.name,
+                            onClick = { }
+                        )
                 }
             }
         }
