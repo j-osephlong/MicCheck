@@ -1,7 +1,9 @@
 package com.example.miccheck
 
 import android.net.Uri
-import androidx.compose.animation.*
+import android.support.v4.media.session.PlaybackStateCompat
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,9 +11,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -27,31 +27,32 @@ fun MainScreen(
     recordingsData: List<RecordingData>,
     recordingState: RecordingState,
     currentPlaybackRec: Recording?,
+    playbackState: Int,
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
     onFinishedRecording: (String, String) -> Unit,
     onStartPlayback: (Recording) -> Unit,
-    onStopPlayback: () -> Unit,
+    onPausePlayPlayback: () -> Unit,
     onAddRecordingTag: (Recording) -> Unit,
     onSelectScreen: (Int) -> Unit,
+    onSelectBackdrop: (Int) -> Unit,
     selectedScreen: Int,
+    selectedBackdrop: Int,
 ) {
-    var recordBackdropOpen by remember { mutableStateOf(false) }
+    var backdropOpen by remember { mutableStateOf(false) }
     val backdropScaffoldState =
         rememberBackdropScaffoldState(
-            initialValue = BackdropValue.Concealed
+            initialValue = BackdropValue.Concealed,
+            confirmStateChange = {
+                backdropOpen = it == BackdropValue.Revealed
+                it == BackdropValue.Revealed || it == BackdropValue.Concealed
+            }
         )
-    val onOpenRecord = {
-        recordBackdropOpen = true
-    }
-    val onCloseRecord = {
-        recordBackdropOpen = false
-    }
 
-    LaunchedEffect(key1 = recordBackdropOpen || currentPlaybackRec != null)
+    LaunchedEffect(key1 = backdropOpen)
     {
-        if (recordBackdropOpen || currentPlaybackRec != null) {
+        if (backdropOpen) {
             backdropScaffoldState.reveal()
         } else {
             backdropScaffoldState.conceal()
@@ -59,15 +60,15 @@ fun MainScreen(
     }
     BackdropScaffold(
         scaffoldState = backdropScaffoldState,
-        gesturesEnabled = recordBackdropOpen || currentPlaybackRec != null,
+        gesturesEnabled = true,
         peekHeight = 72.dp,
         frontLayerElevation = 8.dp,
         frontLayerShape = RoundedCornerShape(22.dp, 0.dp, 0.dp, 0.dp),
         frontLayerBackgroundColor = MaterialTheme.colors.background,
         appBar = {
             TopBar(
-                recordingState = recordingState,
-                onOpenRecord = onOpenRecord
+                onOpenRecord = { backdropOpen = true; onSelectBackdrop(0) },
+                onOpenPlayback = { backdropOpen = true; onSelectBackdrop(1) }
             )
         },
         frontLayerContent =
@@ -97,7 +98,7 @@ fun MainScreen(
                             recordingsData = recordingsData,
                             currentPlaybackRec = currentPlaybackRec,
                             onStartPlayback = onStartPlayback,
-                            onStopPlayback = onStopPlayback,
+                            onOpenPlayback = { onSelectBackdrop(1); backdropOpen = true },
                             onAddRecordingTag = onAddRecordingTag
                         )
                 }
@@ -105,179 +106,44 @@ fun MainScreen(
         },
         backLayerBackgroundColor = MaterialTheme.colors.primary,
         backLayerContent = {
-            if (currentPlaybackRec != null) {
-                Button(onClick = { onStopPlayback() }) {
-                    Text("Stop")
+
+            Column {
+                Crossfade(targetState = selectedBackdrop) {
+                    if (it == 0) {
+                        RecordingBackdrop(
+                            onStartRecord = onStartRecord,
+                            onPausePlayRecord = onPausePlayRecord,
+                            onStopRecord = onStopRecord,
+                            onFinishedRecording = { title, desc ->
+                                onFinishedRecording(
+                                    title,
+                                    desc
+                                ); backdropOpen = false
+                            },
+                            onCancel = { backdropOpen = false },
+                            recordingState = recordingState
+                        )
+                    } else if (it == 1) {
+                        PlaybackBackdrop(
+                            playbackState = playbackState,
+                            currentPlaybackRec = currentPlaybackRec,
+                            currentPlaybackRecData =
+                            recordingsData.find { recData ->
+                                recData.recordingUri == currentPlaybackRec?.uri.toString()
+                            },
+                            onPausePlayPlayback = onPausePlayPlayback
+                        )
+                    }
                 }
-            } else if (recordBackdropOpen) {
-                RecordingBackdrop(
-                    onStartRecord = onStartRecord,
-                    onPausePlayRecord = onPausePlayRecord,
-                    onStopRecord = onStopRecord,
-                    onFinishedRecording = { title, desc ->
-                        onFinishedRecording(
-                            title,
-                            desc
-                        ); recordBackdropOpen = false
-                    },
-                    onCancel = onCloseRecord,
-                    recordingState = recordingState
-                )
             }
         }
     )
 }
 
-@ExperimentalAnimationApi
-@Composable
-fun RecordingBackdrop(
-    onStartRecord: () -> Unit,
-    onPausePlayRecord: () -> Unit,
-    onStopRecord: () -> Unit,
-    onFinishedRecording: (String, String) -> Unit,
-    onCancel: () -> Unit,
-    recordingState: RecordingState
-) {
-    val (titleText, setTitleText) = remember { mutableStateOf("New Recording") }
-    val (descText, setDescText) = remember { mutableStateOf("") }
-
-    Column(
-        Modifier
-            .padding(12.dp, 0.dp, 12.dp, 18.dp)
-            .animateContentSize()
-    ) {
-        TextField(
-            value = titleText,
-            setTitleText,
-            modifier = Modifier.fillMaxWidth(),
-            colors =
-            TextFieldDefaults.textFieldColors(
-                backgroundColor = MaterialTheme.colors.primaryVariant.copy(
-                    alpha = .25f
-                ),
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color.Black
-            ),
-            shape = RoundedCornerShape(40),
-            textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
-        )
-        Spacer(Modifier.height(12.dp))
-        AnimatedVisibility(visible = recordingState == RecordingState.PAUSED || recordingState == RecordingState.STOPPED) {
-            TextField(
-                value = descText,
-                setDescText,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(.25f),
-                label = { Text("Description") },
-                colors =
-                TextFieldDefaults.textFieldColors(
-                    backgroundColor = MaterialTheme.colors.primaryVariant.copy(
-                        alpha = .25f
-                    ),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color.Black
-                ),
-                singleLine = false,
-                shape = RoundedCornerShape(14.dp),
-                textStyle = MaterialTheme.typography.body1,
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.animateContentSize()) {
-                Row(Modifier.padding(0.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    LargeButton(
-                        onClick =
-                        {
-                            when (recordingState) {
-                                RecordingState.WAITING -> {
-                                    onStartRecord()
-                                }
-                                RecordingState.RECORDING, RecordingState.PAUSED -> {
-                                    onStopRecord()
-                                }
-                                RecordingState.STOPPED -> {
-                                    onFinishedRecording(titleText, descText)
-                                }
-                            }
-                        }
-                    ) {
-                        Crossfade(targetState = recordingState) {
-                            when (it) {
-                                RecordingState.WAITING -> Icon(Icons.Default.Mic, "Record")
-                                RecordingState.RECORDING, RecordingState.PAUSED -> Icon(
-                                    Icons.Default.Stop,
-                                    "Stop"
-                                )
-                                RecordingState.STOPPED -> Icon(Icons.Default.Check, "Done")
-                            }
-                        }
-                    }
-                    AnimatedVisibility(
-                        visible = recordingState != RecordingState.STOPPED,
-                        enter = slideInHorizontally(),
-                        exit = slideOutHorizontally()
-                    ) {
-                        Row {
-                            Spacer(Modifier.width(8.dp))
-                            CircleButton(
-                                onClick =
-                                when (recordingState) {
-                                    RecordingState.WAITING -> onCancel
-                                    else -> onPausePlayRecord
-                                }
-                            ) {
-                                Crossfade(targetState = recordingState) {
-                                    when (it) {
-                                        RecordingState.WAITING -> Icon(
-                                            Icons.Default.Close,
-                                            "Cancel"
-                                        )
-                                        RecordingState.RECORDING -> Icon(
-                                            Icons.Default.Pause,
-                                            "Pause"
-                                        )
-                                        else -> Icon(Icons.Default.Mic, "Continue Recording")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/*
-floatingActionButtonPosition = FabPosition.End,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text =
-                { Text(if (!currentlyRecording) "Record" else "Stop Recording", modifier = Modifier.animateContentSize()) },
-                onClick = if (!currentlyRecording) onStartRecord else onStopRecord,
-                icon =
-                {
-                    Crossfade(targetState = currentlyRecording) {
-                        Icon(
-                            imageVector = if (!it) Icons.Default.Add else Icons.Default.Stop,
-                            contentDescription = if (!it) "Record" else "Stop Recording"
-                        )
-                    }
-                },
-                shape = RoundedCornerShape(16.dp)
-            )
-        },
-*/
-
-
 @Composable
 fun TopBar(
-    recordingState: RecordingState,
     onOpenRecord: () -> Unit,
+    onOpenPlayback: () -> Unit
 ) {
     var moreMenuExpanded by remember { mutableStateOf(false) }
 
@@ -293,6 +159,12 @@ fun TopBar(
             )
         },
         actions = {
+            IconButton(onClick = { onOpenPlayback() }) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = "Playback",
+                )
+            }
             IconButton(onClick = { onOpenRecord() }) {
                 Icon(
                     Icons.Filled.Add,
@@ -335,24 +207,6 @@ fun TopBar(
     )
 }
 
-@ExperimentalAnimationApi
-@Preview
-@Composable
-fun RecordingControlsPreview() {
-    MicCheckTheme {
-        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colors.primary) {
-            RecordingBackdrop(
-                onStartRecord = { /*TODO*/ },
-                onPausePlayRecord = { /*TODO*/ },
-                onStopRecord = { /*TODO*/ },
-                onFinishedRecording = { _, _ -> },
-                onCancel = { },
-                recordingState = RecordingState.STOPPED
-            )
-        }
-    }
-}
-
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
@@ -364,6 +218,12 @@ fun MainScreenPreview() {
     }
     val onSelectScreen: (Int) -> Unit = {
         sel = it
+    }
+    var selB by remember {
+        mutableStateOf(0)
+    }
+    val onSelectBackdrop: (Int) -> Unit = {
+        selB = it
     }
     var recording by remember {
         mutableStateOf(RecordingState.WAITING)
@@ -387,15 +247,18 @@ fun MainScreenPreview() {
                 ),
                 recordingState = recording,
                 currentPlaybackRec = null,
+                playbackState = PlaybackStateCompat.STATE_NONE,
                 onStartRecord = { recording = RecordingState.RECORDING },
                 onPausePlayRecord = { },
                 onStopRecord = { recording = RecordingState.WAITING },
                 onFinishedRecording = { _, _ -> },
                 onStartPlayback = { /*TODO*/ },
-                onStopPlayback = { /*TODO*/ },
+                onPausePlayPlayback = { /*TODO*/ },
                 onAddRecordingTag = { /*TODO*/ },
                 onSelectScreen = onSelectScreen,
-                selectedScreen = sel
+                selectedScreen = sel,
+                onSelectBackdrop = onSelectBackdrop,
+                selectedBackdrop = selB
             )
         }
     }

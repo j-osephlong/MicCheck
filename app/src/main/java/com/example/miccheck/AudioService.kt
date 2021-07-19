@@ -1,15 +1,27 @@
 package com.example.miccheck
 
+
+import android.app.Notification
+import android.app.PendingIntent
 import android.content.Intent
-import android.media.browse.MediaBrowser
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Bundle
-import android.service.media.MediaBrowserService
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaDescriptionCompat
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.media.MediaBrowserServiceCompat
+import androidx.media.session.MediaButtonReceiver
 import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory
@@ -18,32 +30,79 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
 import com.google.android.exoplayer2.util.Util
 
-class AudioService : MediaBrowserService() {
-    private var mMediaSession: MediaSession? = null
-    private lateinit var mStateBuilder: PlaybackState.Builder
+class AudioService : MediaBrowserServiceCompat() {
+    val CUSTOM_ACTION_REPLAY = "REPLAY"
+    val replayAction = PlaybackStateCompat.CustomAction.Builder(
+        CUSTOM_ACTION_REPLAY,
+        "Replay",
+        R.drawable.ic_baseline_replay_24
+    ).build()
+
+    private var mMediaSession: MediaSessionCompat? = null
+    private lateinit var mStateBuilder: PlaybackStateCompat.Builder
     private var mExoPlayer: SimpleExoPlayer? = null
     private var oldUri: Uri? = null
-    private val mMediaSessionCallback = object : MediaSession.Callback() {
+    private var currUri: Uri? = null
+    private var mediaExtras: Bundle? = null
+
+    private var notificationId = 101
+    private var channelId = "micCheckAudioServiceControls"
+    private var notificationBuilder: Notification.Builder? = null
+
+    private val emptyRootMediaId = "micCheck_empty_root_media_id"
+
+    private val mMediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlayFromUri(uri: Uri?, extras: Bundle?) {
             super.onPlayFromUri(uri, extras)
+
             uri?.let {
                 val mediaSource = extractMediaSourceFromUri(uri)
-                if (uri != oldUri)
+                currUri = uri
+                mediaExtras = extras
+                setMetadataFromExtras()
+                if (uri != oldUri || mMediaSession!!.controller.playbackState.state == PlaybackStateCompat.STATE_STOPPED)
                     play(mediaSource)
                 else play() // this song was paused so we don't need to reload it
                 oldUri = uri
             }
+            displayNotification()
+        }
+
+        override fun onPlay() {
+            super.onPlay()
+            currUri?.let {
+                onPlayFromUri(currUri, mediaExtras)
+                displayNotification()
+            }
+        }
+
+        override fun onSeekTo(pos: Long) {
+            super.onSeekTo(pos)
+            seek(pos)
         }
 
         override fun onPause() {
             super.onPause()
             pause()
+            displayNotification()
+            stopForeground(false)
         }
 
         override fun onStop() {
             super.onStop()
             stop()
+            stopForeground(true)
         }
+
+//        override fun onCustomAction(action: String?, extras: Bundle?) {
+//            super.onCustomAction(action, extras)
+//            if (action == CUSTOM_ACTION_REPLAY)
+//            {
+//                onSeekTo(0)
+//                onPlay()
+//                displayNotification()
+//            }
+//        }
     }
 
     override fun onCreate() {
@@ -51,20 +110,39 @@ class AudioService : MediaBrowserService() {
         initializePlayer()
         initializeExtractor()
         initializeAttributes()
-        mMediaSession = MediaSession(baseContext, "tag for debugging").apply {
+        mMediaSession = MediaSessionCompat(baseContext, "AudioService").apply {
 
             // Set initial PlaybackState with ACTION_PLAY, so media buttons can start the player
-            mStateBuilder = PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PLAY_PAUSE)
+            mStateBuilder = PlaybackStateCompat.Builder()
+                .setActions(
+                    PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE
+                )
+//                .addCustomAction(PlaybackStateCompat.CustomAction.Builder(
+//                    CUSTOM_ACTION_REPLAY,
+//                    "Replay",
+//                    R.drawable.ic_baseline_replay_24
+//                ).build())
+//                .setState(PlaybackStateCompat.STATE_NONE, mExoPlayer!!.currentPosition, 1f)
             setPlaybackState(mStateBuilder.build())
 
             // methods that handle callbacks from a media controller
             setCallback(mMediaSessionCallback)
 
             // Set the session's token so that client activities can communicate with it
-            setSessionToken(this.sessionToken)
+            setSessionToken(sessionToken)
             isActive = true
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) {
+            MediaButtonReceiver.handleIntent(mMediaSession, intent)
+            Log.e(
+                "AudioService",
+                "onStartCommand(): received intent " + intent.action + " with flags " + flags + " and startId " + startId
+            )
+        }
+        return START_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -77,6 +155,37 @@ class AudioService : MediaBrowserService() {
         stop()
     }
 
+    private fun setMetadataFromExtras() {
+        mediaExtras?.let { mediaExtras ->
+            mMediaSession?.let { mMediaSession ->
+                mMediaSession.setMetadata(
+                    MediaMetadataCompat.Builder().apply {
+                        putString(
+                            MediaMetadataCompat.METADATA_KEY_TITLE,
+                            mediaExtras.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
+                        )
+                        putString(
+                            MediaMetadataCompat.METADATA_KEY_ALBUM,
+                            mediaExtras.getString(MediaMetadataCompat.METADATA_KEY_ALBUM)
+                        )
+                        putString(
+                            MediaMetadataCompat.METADATA_KEY_ARTIST,
+                            mediaExtras.getString(MediaMetadataCompat.METADATA_KEY_ARTIST)
+                        )
+                        putLong(
+                            MediaMetadataCompat.METADATA_KEY_DURATION,
+                            mediaExtras.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                        )
+                        putString(
+                            MediaMetadataCompat.METADATA_KEY_MEDIA_URI,
+                            currUri.toString()
+                        )
+                    }.build()
+                )
+            }
+        }
+    }
+
     private fun play(mediaSource: MediaSource) {
         if (mExoPlayer == null) initializePlayer()
         mExoPlayer?.apply {
@@ -87,23 +196,29 @@ class AudioService : MediaBrowserService() {
             setMediaSource(mediaSource)
             prepare()
             play()
+            updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         }
     }
 
     private fun play() {
         mExoPlayer?.apply {
             mExoPlayer?.playWhenReady = true
-            updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
             mMediaSession?.isActive = true
+            updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         }
+
     }
 
     private fun pause() {
         mExoPlayer?.apply {
             playWhenReady = false
-            if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
-                updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
-            }
+            updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
+        }
+    }
+
+    private fun seek(pos: Long) {
+        mExoPlayer?.apply {
+            seekTo(pos)
         }
     }
 
@@ -115,19 +230,27 @@ class AudioService : MediaBrowserService() {
         }
 
         mExoPlayer = null
-        updatePlaybackState(PlaybackStateCompat.STATE_NONE)
         mMediaSession?.isActive = false
         mMediaSession?.release()
+
+        Log.i("AudioService", "Stopping playback.")
     }
 
-    private fun updatePlaybackState(state: Int) {
+    private fun updatePlaybackState(state: Int?) {
         // You need to change the state because the action taken in the controller depends on the state !!!
         mMediaSession?.setPlaybackState(
-            PlaybackState.Builder().setState(
-                state // this state is handled in the media controller
-                , 0L, 1.0f // Speed playing
-            ).build()
+            PlaybackStateCompat.Builder()
+                .setActions(
+                    PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                            PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_STOP or PlaybackStateCompat.ACTION_SEEK_TO
+                )
+                .setState(
+                    state
+                        ?: mMediaSession!!.controller.playbackState.state // this state is handled in the media controller
+                    , mExoPlayer?.currentPosition ?: 0L, 1.0f // Speed playing
+                ).build()
         )
+        Log.i("AudioService", "State posted - $state")
     }
 
     private var mAttrs: AudioAttributes? = null
@@ -136,21 +259,44 @@ class AudioService : MediaBrowserService() {
         mExoPlayer = SimpleExoPlayer.Builder(
             this
         ).build()
-    }
 
-    override fun onLoadChildren(
-        parentId: String,
-        result: Result<MutableList<MediaBrowser.MediaItem>>
-    ) {
-
+        mExoPlayer!!.addListener(
+            object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    super.onIsPlayingChanged(isPlaying)
+                    when (mExoPlayer!!.playbackState) {
+                        Player.STATE_IDLE -> updatePlaybackState(PlaybackStateCompat.STATE_NONE)
+                        Player.STATE_ENDED -> {
+                            updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
+                            mExoPlayer!!.stop()
+                        }
+                        else ->
+                            if (isPlaying)
+                                updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
+                            else
+                                updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
+                    }
+                }
+            }
+        )
     }
 
     override fun onGetRoot(
         clientPackageName: String,
         clientUid: Int,
         rootHints: Bundle?
-    ): BrowserRoot? {
-        return BrowserRoot("", null)
+    ): BrowserRoot {
+        return BrowserRoot(emptyRootMediaId, null)
+    }
+
+    override fun onLoadChildren(
+        parentId: String,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>
+    ) {
+        if (parentId == emptyRootMediaId) {
+            result.sendResult(null)
+        }
+
     }
 
     private fun initializeAttributes() {
@@ -173,4 +319,114 @@ class AudioService : MediaBrowserService() {
 
         return mExtractorFactory.createMediaSource(MediaItem.fromUri(uri))
     }
+
+    private fun getPausePlayActions():
+            Pair<Notification.Action, Notification.Action> {
+        val pauseAction = Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_pause), "Pause",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_PAUSE
+            )
+        ).build()
+
+        val playAction = Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_play_arrow), "Play",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_PLAY
+            )
+        ).build()
+
+        return Pair(pauseAction, playAction)
+    }
+
+    private fun getNotificationIntent(): PendingIntent {
+        val openActivityIntent = Intent(
+            this,
+            MainActivity::class.java
+        )
+        openActivityIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        return PendingIntent.getActivity(
+            this@AudioService, 0, openActivityIntent,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun initializeNotification(
+        mediaDescription: MediaDescriptionCompat,
+        bitmap: Bitmap?
+    ) {
+
+        val notificationIntent = getNotificationIntent()
+        // 3
+        val (pauseAction, playAction) = getPausePlayActions()
+        // 4
+        val notification = Notification.Builder(
+            this@AudioService, channelId
+        )
+
+        notification
+            .setContentTitle(mediaDescription.title)
+            .setContentText(mediaDescription.subtitle)
+            .setLargeIcon(bitmap)
+            .setContentIntent(notificationIntent)
+            .setDeleteIntent(
+                MediaButtonReceiver.buildMediaButtonPendingIntent
+                    (this, PlaybackStateCompat.ACTION_STOP)
+            )
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setSmallIcon(R.drawable.ic_notification_temp)
+            .addAction(if (mMediaSession!!.controller.playbackState.state == PlaybackStateCompat.STATE_PLAYING) pauseAction else playAction)
+            .style =
+            Notification.MediaStyle()
+                .setMediaSession(mMediaSession!!.sessionToken.token as MediaSession.Token?)
+                .setShowActionsInCompactView(0)
+
+        notificationBuilder = notification
+    }
+
+    private fun displayNotification() {
+        // 1
+        if (mMediaSession == null)
+            return
+        if (mMediaSession!!.controller.metadata == null) {
+            return
+        }
+
+        // 3
+        val mediaDescription =
+            mMediaSession!!.controller.metadata.description
+        // 4
+//        GlobalScope.launch {
+//            // 5
+
+        val bitmap =
+            BitmapFactory.decodeResource(
+                this@AudioService.resources,
+                R.drawable.ic_notification_temp
+            )
+        // 7
+        initializeNotification(
+            mediaDescription,
+            bitmap
+        )
+        // 8
+        ContextCompat.startForegroundService(
+            this@AudioService,
+            Intent(
+                this@AudioService,
+                AudioService::class.java
+            )
+        )
+        // 9
+        startForeground(
+            notificationId,
+            notificationBuilder!!.build()
+        )
+//        }
+    }
+
 }
+
+

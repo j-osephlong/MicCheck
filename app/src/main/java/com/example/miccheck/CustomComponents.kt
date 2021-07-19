@@ -1,6 +1,7 @@
 package com.example.miccheck
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -8,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MicExternalOn
 import androidx.compose.runtime.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,22 +29,38 @@ import com.example.miccheck.ui.theme.MicCheckTheme
 fun Chip(
     text: String,
     onClick: () -> Unit,
+    icon: ImageVector? = null,
+    onIconClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colors.surface.copy(alpha = .2f),
     contentColor: Color = MaterialTheme.colors.onSurface
 ) {
-    Row {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier,
-            elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
-            colors = ButtonDefaults.outlinedButtonColors(color, contentColor),
-            shape = RoundedCornerShape(100),
-            border = ButtonDefaults.outlinedBorder.copy(width = 1.dp)
-        ) {
-            Text(text)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .height(32.dp)
+            .widthIn(min = 84.dp, max = 142.dp),
+        elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
+        colors = ButtonDefaults.outlinedButtonColors(color, contentColor),
+        shape = RoundedCornerShape(100),
+        border = ButtonDefaults.outlinedBorder.copy(width = 1.dp),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(icon, "Chip Icon",
+                    Modifier
+                        .clickable(onClick = onIconClick)
+                        .size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            } else {
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Text(text, overflow = TextOverflow.Ellipsis, maxLines = 1)
+            Spacer(modifier = Modifier.width(12.dp))
         }
-        Spacer(Modifier.width(8.dp))
+
     }
 }
 
@@ -167,8 +186,9 @@ fun ChipPreview () {
     MicCheckTheme {
         Surface {
             Chip(
-                "Chip",
-                onClick = {}
+                "ChipChipChipChip",
+                onClick = {},
+                icon = Icons.Default.Cancel
             )
         }
     }

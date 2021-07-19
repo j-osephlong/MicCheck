@@ -28,7 +28,7 @@ fun RecordingsList(
     recordingsData: List<RecordingData>,
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
-    onStopPlayback: () -> Unit,
+    onOpenPlayback: () -> Unit,
     onAddRecordingTag: (Recording) -> Unit
 ) {
 
@@ -54,9 +54,11 @@ fun RecordingsList(
                             onAddTag = onAddRecordingTag,
                             onClick = {
                                 if (item.first == currentPlaybackRec)
-                                    onStopPlayback()
-                                else
+                                    onOpenPlayback()
+                                else {
                                     onStartPlayback(item.first)
+                                    onOpenPlayback()
+                                }
                             }
                         )
                         if (index != recordings.size - 1)
@@ -223,11 +225,15 @@ fun RecordingElm(
                 Spacer(Modifier.height(8.dp))
             LazyRow {
                 itemsIndexed(rec.second.tags) { index, item ->
-                    if (index < 4)
-                        Chip(
-                            text = item.name,
-                            onClick = { }
-                        )
+                    if (index < 4) {
+                        Row {
+                            Chip(
+                                text = item.name,
+                                onClick = { }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                    }
                 }
             }
         }

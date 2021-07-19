@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -15,22 +16,25 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlin.random.Random
 
-enum class RecordingState {
-    RECORDING, PAUSED, STOPPED, WAITING
-}
-
 class AppViewModel : ViewModel() {
     var currentPlayBackRec by mutableStateOf<Recording?>(null)
         private set
+    var currentPlaybackState by mutableStateOf(PlaybackStateCompat.STATE_NONE)
     var currentRecordingUri: Uri? = null
     var recordingState by mutableStateOf(RecordingState.WAITING)
     var selectedScreen by mutableStateOf(0)
+        private set
+    var selectedBackdrop by mutableStateOf(0)
         private set
     var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
     var recordingsData = mutableStateListOf<RecordingData>()
 
     fun setScreen(screen: Int) {
         selectedScreen = screen
+    }
+
+    fun setBackdrop(backdrop: Int) {
+        selectedBackdrop = backdrop
     }
 
     fun onRecordingFinished(
