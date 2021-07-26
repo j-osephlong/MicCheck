@@ -6,15 +6,19 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import android.support.v4.media.session.PlaybackStateCompat
+import android.text.format.Formatter
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
-import kotlin.random.Random
 
 class AppViewModel : ViewModel() {
     var currentPlayBackRec by mutableStateOf<Recording?>(null)
@@ -22,19 +26,70 @@ class AppViewModel : ViewModel() {
     var currentPlaybackState by mutableStateOf(PlaybackStateCompat.STATE_NONE)
     var currentRecordingUri: Uri? = null
     var recordingState by mutableStateOf(RecordingState.WAITING)
-    var selectedScreen by mutableStateOf(0)
-        private set
     var selectedBackdrop by mutableStateOf(0)
         private set
-    var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0))
+    var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0, "0B"))
     var recordingsData = mutableStateListOf<RecordingData>()
+    var tags = mutableStateListOf<Tag>()
 
-    fun setScreen(screen: Int) {
-        selectedScreen = screen
-    }
+    lateinit var serializeAndSave: suspend () -> Unit
 
     fun setBackdrop(backdrop: Int) {
         selectedBackdrop = backdrop
+    }
+
+    fun onEditRecordingDataFinished(
+        context: Context,
+        recording: Recording,
+        title: String,
+        description: String
+    ) {
+        val recordingIndex = recordings.indexOf(recording)
+        val recordingRef = recordings[recordingIndex]
+        val recordingData = recordingsData.find { it.recordingUri == recording.uri.toString() }!!
+        val recordingDataIndex = recordingsData.indexOf(recordingData)
+
+        if (title.isNotBlank()) {
+            context.contentResolver.update(
+                recording.uri,
+                ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, "$title.m4a")
+                },
+                "${MediaStore.Audio.Media._ID} = ?",
+                arrayOf(ContentUris.parseId(recording.uri).toString())
+            )
+            recordingRef.name = title
+        }
+
+        recordingData.description = description
+
+        recordings[recordingIndex] = recordingRef
+        recordingsData[recordingDataIndex] = recordingData
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
+    }
+
+    fun onDeleteRecording(
+        context: Context,
+        recording: Recording
+    ) {
+        val recordingData = recordingsData.find { it.recordingUri == recording.uri.toString() }
+        context.contentResolver.delete(
+            recording.uri, null, null
+        )
+
+        recordings.remove(recording)
+        recordingsData.remove(recordingData)
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
     }
 
     fun onRecordingFinished(
@@ -63,15 +118,33 @@ class AppViewModel : ViewModel() {
         )
         currentRecordingUri = null
         recordingState = RecordingState.WAITING
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
     }
 
-    fun addTagToRecording(recording: Recording) {
-        val recData = recordingsData.filter {
+    fun addTagToRecording(recording: Recording, tag: Tag) {
+        val recData = recordingsData.find {
             Uri.parse(it.recordingUri) == recording.uri
-        }[0]
+        }!!
         val index = recordingsData.indexOf(recData)
-        recData.tags += Tag(Random.nextInt().toString())
+
+        if (recData.tags.find { tag.name == it.name } != null)
+            return
+        if (tags.find { tag.name == it.name } == null)
+            tags += tag
+
+        recData.tags += tag
         recordingsData[index] = recData
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
     }
 
     fun setCurrentPlayback(rec: Recording?) {
@@ -133,7 +206,11 @@ class AppViewModel : ViewModel() {
                 Log.e("VM", "Found file " + contentUri)
                 recordings.add(
                     Recording(
-                        contentUri, name, duration, size,
+                        contentUri,
+                        name,
+                        duration,
+                        size,
+                        Formatter.formatShortFileSize(context, size.toLong()).toString(),
                         date = Instant.ofEpochMilli(date).atZone(ZoneId.systemDefault())
                             .toLocalDateTime()
                     )
@@ -145,6 +222,12 @@ class AppViewModel : ViewModel() {
                             contentUri.toString()
                         )
                     )
+            }
+        }
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
             }
         }
     }

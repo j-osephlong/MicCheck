@@ -1,7 +1,11 @@
 package com.example.miccheck
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,21 +13,113 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MicExternalOn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
 import com.example.miccheck.ui.theme.MicCheckTheme
+
+@Composable
+fun SeekBar(
+    progress: Float = 1f,
+    onUpdateProgress: (Float) -> Unit
+) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+    ) {
+        val width = maxWidth
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        onUpdateProgress(
+                            (it.x.toDp() + 10.dp) / (width)
+                        )
+                    }
+                }
+        ) {
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = MaterialTheme.colors.primaryVariant.copy(
+                        alpha = .25f
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .padding(10.dp, 0.dp),
+                    shape = RoundedCornerShape(100)
+                ) {
+
+                }
+            }
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = MaterialTheme.colors.primaryVariant,
+                    modifier = Modifier
+                        .fillMaxWidth(progress)
+                        .height(6.dp)
+                        .padding(10.dp, 0.dp),
+                    shape = RoundedCornerShape(100)
+                ) {
+
+                }
+            }
+            Row(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = max(0.dp, (width * progress) - 20.dp)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = MaterialTheme.colors.primaryVariant,
+                    shape = CircleShape,
+                    modifier = Modifier.size(20.dp),
+                    elevation = 4.dp
+                ) {
+
+                }
+            }
+        }
+    }
+}
+
+@Preview
+@Composable
+fun SeekbarPreview() {
+    Surface(
+        color = Color.White,
+        modifier = Modifier
+            .padding(0.dp)
+            .fillMaxWidth()
+    ) {
+        MicCheckTheme {
+            SeekBar(.05f, {})
+        }
+    }
+}
 
 @Composable
 fun Chip(
@@ -39,7 +135,7 @@ fun Chip(
         onClick = onClick,
         modifier = modifier
             .height(32.dp)
-            .widthIn(min = 84.dp, max = 142.dp),
+            .widthIn(min = 84.dp, max = 164.dp),
         elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
         colors = ButtonDefaults.outlinedButtonColors(color, contentColor),
         shape = RoundedCornerShape(100),
@@ -49,15 +145,21 @@ fun Chip(
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Spacer(modifier = Modifier.width(8.dp))
-                Icon(icon, "Chip Icon",
+                Icon(
+                    icon, "Chip Icon",
                     Modifier
                         .clickable(onClick = onIconClick)
-                        .size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
+                        .size(18.dp)
+                )
+                if (text.isNotBlank())
+                    Spacer(modifier = Modifier.width(8.dp))
             } else {
                 Spacer(modifier = Modifier.width(12.dp))
             }
-            Text(text, overflow = TextOverflow.Ellipsis, maxLines = 1)
+            Text(
+                text, overflow = TextOverflow.Ellipsis, maxLines = 1,
+                modifier = Modifier.widthIn(max = 140.dp)
+            )
             Spacer(modifier = Modifier.width(12.dp))
         }
 
@@ -75,7 +177,8 @@ fun LargeButton(
             backgroundColor = MaterialTheme.colors.primaryVariant,
             contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
         ),
-        shape = RoundedCornerShape(40)
+        shape = RoundedCornerShape(40),
+        elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp)
     ) {
         Box(Modifier.padding(24.dp, 12.dp)) {
             content()
@@ -170,6 +273,152 @@ fun ScreenSelectButton(
 }
 
 @Composable
+fun NewButtons(
+    buttonPos: Int,
+    onClick: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp, 0.dp, 12.dp, 18.dp),
+        color = Color.Transparent
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Surface(
+                Modifier.fillMaxWidth(.75f),
+                shape = RoundedCornerShape(100),
+                color = MaterialTheme.colors.primaryVariant.copy(
+                    alpha = .25f
+                )
+            ) {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val width = maxWidth
+                    val offset by animateDpAsState(
+                        when (buttonPos) {
+                            0 -> 0.dp
+                            else -> width / 2
+                        },
+                        spring(dampingRatio = Spring.DampingRatioLowBouncy)
+                    )
+                    Surface(
+                        Modifier
+                            .fillMaxWidth(.5f)
+                            .align(Alignment.TopStart)
+                            .clickable {
+                                onClick(0)
+                            }
+                            .clip(RoundedCornerShape(100)),
+                        shape = RoundedCornerShape(100),
+                        color = Color.Transparent,
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Record",
+                                style = MaterialTheme.typography.h6.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colors.onPrimary.copy(
+                                        alpha = .7f
+                                    )
+                                ),
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        Modifier
+                            .fillMaxWidth(.5f)
+                            .align(Alignment.TopEnd)
+                            .clickable {
+                                onClick(1)
+                            }
+                            .clip(RoundedCornerShape(100)),
+                        shape = RoundedCornerShape(100),
+                        color = Color.Transparent
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Play",
+                                style = MaterialTheme.typography.h6.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colors.onPrimary.copy(
+                                        alpha = .7f
+                                    )
+                                ),
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        Modifier
+                            .fillMaxWidth(.5f)
+                            .align(Alignment.TopStart)
+                            .offset(x = offset),
+                        shape = RoundedCornerShape(100),
+                        color = MaterialTheme.colors.primaryVariant,
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Crossfade(
+                                targetState = buttonPos,
+                                modifier = Modifier
+                                    .fillMaxWidth(),
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    if (it == 0)
+                                        Text(
+                                            "Record",
+                                            style = MaterialTheme.typography.h6.copy(
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = MaterialTheme.colors.onPrimary.copy(
+                                                    alpha = .7f
+                                                )
+                                            ),
+                                            modifier = Modifier
+                                                .padding(12.dp)
+                                        )
+                                    else
+                                        Text(
+                                            "Play",
+                                            style = MaterialTheme.typography.h6.copy(
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = MaterialTheme.colors.onSecondary.copy(
+                                                    alpha = .7f
+                                                )
+                                            ),
+                                            modifier = Modifier
+                                                .padding(12.dp)
+                                        )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Preview
+@Composable
+fun NewButtonPreview() {
+    MicCheckTheme {
+        NewButtons(0, {})
+    }
+}
+
+@Composable
 fun ScreenSelectRow(
     modifier: Modifier = Modifier,
     buttons: @Composable () -> Unit
@@ -186,9 +435,8 @@ fun ChipPreview () {
     MicCheckTheme {
         Surface {
             Chip(
-                "ChipChipChipChip",
-                onClick = {},
-                icon = Icons.Default.Cancel
+                "deez nuts haha wow wowow",
+                onClick = {}
             )
         }
     }

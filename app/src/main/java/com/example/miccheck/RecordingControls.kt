@@ -49,8 +49,9 @@ fun RecordingBackdrop(
                 ),
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color.Black
-            ),
+                cursorColor = Color.Black,
+
+                ),
             shape = RoundedCornerShape(40),
             textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
         )
@@ -87,7 +88,7 @@ fun MetadataOptions(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(.25f),
-            label = { Text("Description") },
+            placeholder = { Text("Description") },
             colors =
             TextFieldDefaults.textFieldColors(
                 backgroundColor = MaterialTheme.colors.primaryVariant.copy(

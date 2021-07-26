@@ -269,6 +269,7 @@ class AudioService : MediaBrowserServiceCompat() {
                         Player.STATE_ENDED -> {
                             updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
                             mExoPlayer!!.stop()
+                            displayNotification()
                         }
                         else ->
                             if (isPlaying)
@@ -377,7 +378,12 @@ class AudioService : MediaBrowserServiceCompat() {
             )
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setSmallIcon(R.drawable.ic_notification_temp)
-            .addAction(if (mMediaSession!!.controller.playbackState.state == PlaybackStateCompat.STATE_PLAYING) pauseAction else playAction)
+            .addAction(
+                when (mMediaSession!!.controller.playbackState.state) {
+                    PlaybackStateCompat.STATE_PLAYING -> pauseAction
+                    else -> playAction
+                }
+            )
             .style =
             Notification.MediaStyle()
                 .setMediaSession(mMediaSession!!.sessionToken.token as MediaSession.Token?)

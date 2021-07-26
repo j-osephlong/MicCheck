@@ -25,12 +25,16 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.toMutableStateList
 import androidx.core.content.ContextCompat
 import com.example.miccheck.ui.theme.MicCheckTheme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import java.io.File
 
 
 class MainActivity : AppCompatActivity() {
@@ -86,14 +90,15 @@ class MainActivity : AppCompatActivity() {
         lIntent.putExtra("Messenger", mActivityMessenger)
         startService(lIntent)
 
+        mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
+        loadData()
+        CoroutineScope(Dispatchers.IO).launch {
+            mainActivityVM.loadRecordings(applicationContext)
+            verifyData()
+        }
+
         setContent {
             val coroutineScope = rememberCoroutineScope()
-            coroutineScope.launch {
-                withContext(Dispatchers.IO)
-                {
-                    mainActivityVM.loadRecordings(applicationContext)
-                }
-            }
 
             MicCheckTheme {
                 val systemUiController = rememberSystemUiController()
@@ -107,15 +112,16 @@ class MainActivity : AppCompatActivity() {
                     )
 
                 }
-
                 // A surface container using the 'background' color from the theme
                 Surface {
                     MainScreen(
                         recordings = mainActivityVM.recordings,
                         recordingsData = mainActivityVM.recordingsData,
+                        tags = mainActivityVM.tags,
                         recordingState = mainActivityVM.recordingState,
                         currentPlaybackRec = mainActivityVM.currentPlayBackRec,
                         playbackState = mainActivityVM.currentPlaybackState,
+                        playbackProgress = mediaController?.playbackState?.position?.toInt() ?: 0,
                         onStartRecord = { onStartRecord() },
                         onPausePlayRecord = { onPausePlayRecord() },
                         onStopRecord = {
@@ -194,15 +200,75 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 )
                         },
+                        onSeekPlayback = {
+                            mediaController.transportControls.seekTo(it)
+                        },
                         onAddRecordingTag = mainActivityVM::addTagToRecording,
-                        onSelectScreen = mainActivityVM::setScreen,
-                        selectedScreen = mainActivityVM.selectedScreen,
+                        onEditFinished = { rec, title, desc ->
+                            mainActivityVM.onEditRecordingDataFinished(
+                                applicationContext,
+                                rec,
+                                title,
+                                desc
+                            )
+                        },
+                        onDeleteRecording = {
+                            mainActivityVM.onDeleteRecording(applicationContext, it)
+                        },
                         onSelectBackdrop = mainActivityVM::setBackdrop,
                         selectedBackdrop = mainActivityVM.selectedBackdrop
                     )
                 }
             }
         }
+    }
+
+    private suspend fun serializeAndSaveData() {
+        val packagedData = Json.encodeToString(
+            PackagedData.serializer(), PackagedData(
+                recordingsData = mainActivityVM.recordingsData,
+                tags = mainActivityVM.tags
+            )
+        )
+
+        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
+        if (!dataFile.exists()) dataFile.createNewFile()
+        dataFile.writeText(packagedData)
+    }
+
+    private fun loadData() {
+        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
+        if (!dataFile.exists())
+            return
+        val packagedData = dataFile.readText()
+        val unpackagedData: PackagedData =
+            try {
+                Json.decodeFromString(PackagedData.serializer(), packagedData)
+            } catch (e: SerializationException) {
+                PackagedData(
+                    listOf(),
+                    listOf()
+                )
+            }
+
+        mainActivityVM.tags = unpackagedData.tags.toMutableStateList()
+        mainActivityVM.recordingsData = unpackagedData.recordingsData.toMutableStateList()
+    }
+
+    private suspend fun verifyData() {
+        mainActivityVM.recordingsData.removeIf { recData ->
+            mainActivityVM.recordings.find {
+                it.uri.toString() == recData.recordingUri
+            } == null
+        }
+
+        mainActivityVM.tags.removeIf { tag ->
+            mainActivityVM.recordingsData.find { recData ->
+                recData.tags.find { tag.name == it.name } != null
+            } == null
+        }
+
+        serializeAndSaveData()
     }
 
     override fun onStart() {
@@ -247,7 +313,7 @@ class MainActivity : AppCompatActivity() {
                 NotificationChannel(
                     "micCheckAudioServiceControls",
                     "MicCheck AudioService Controls",
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "Playback controls"
                 }

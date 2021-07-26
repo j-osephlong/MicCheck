@@ -8,10 +8,11 @@ import java.time.LocalDateTime
 
 data class Recording(
     val uri: Uri,
-    val name: String,
+    var name: String,
     val duration: Int,
     // in bytes
     val size: Int,
+    val sizeStr: String,
     val date: LocalDateTime = LocalDateTime.now(),
 )
 
@@ -20,7 +21,7 @@ data class RecordingKey(
     val year: Int
 )
 
-fun Recording.toKey(): RecordingKey {
+fun Recording.toDateKey(): RecordingKey {
     return RecordingKey(this.date.dayOfYear, this.date.year)
 }
 
@@ -36,10 +37,17 @@ data class RecordingData(
 data class RecordingGroup(
     val name: String,
     var imgUri: String? = null,
-    var fallbackColor: Int = Color.White.toArgb()
+    var fallbackColor: Int = Color.White.toArgb(),
+    val uuid: String
 )
 
 @Serializable
 data class Tag(
     var name: String,
+)
+
+@Serializable
+data class PackagedData(
+    val tags: List<Tag>,
+    val recordingsData: List<RecordingData>
 )

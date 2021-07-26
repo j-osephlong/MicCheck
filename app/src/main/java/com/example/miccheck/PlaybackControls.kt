@@ -6,6 +6,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -27,9 +29,12 @@ import com.example.miccheck.ui.theme.MicCheckTheme
 @Composable
 fun PlaybackBackdrop(
     playbackState: Int,
+    playbackProgress: Int,
     currentPlaybackRec: Recording?,
     currentPlaybackRecData: RecordingData?,
-    onPausePlayPlayback: () -> Unit
+    onPausePlayPlayback: () -> Unit,
+    onSeekPlayback: (Long) -> Unit,
+    onOpenRecordingInfo: (Recording) -> Unit
 ) {
     Column(
         Modifier
@@ -39,12 +44,20 @@ fun PlaybackBackdrop(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(8.dp))
-        Text(
-            currentPlaybackRec?.name ?: "INSERT CASSETTE",
-            style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                currentPlaybackRec?.name ?: "INSERT CASSETTE",
+                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable {
+                    currentPlaybackRec?.also {
+                        onOpenRecordingInfo(it)
+                    }
+                },
+                textAlign = TextAlign.Center
+            )
+        }
         Spacer(Modifier.height(20.dp))
         if (currentPlaybackRec != null) {
             LazyRow(horizontalArrangement = Arrangement.Center) {
@@ -52,14 +65,14 @@ fun PlaybackBackdrop(
                     Chip(
                         text = currentPlaybackRec.date.year.toString(),
                         onClick = { },
-                        color = MaterialTheme.colors.primaryVariant.copy(alpha = .1f),
+                        color = MaterialTheme.colors.primaryVariant.copy(alpha = .25f),
                         contentColor = MaterialTheme.colors.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Chip(
                         text = currentPlaybackRecData?.group?.name ?: "No Group",
                         onClick = { },
-                        color = MaterialTheme.colors.primaryVariant.copy(alpha = .1f),
+                        color = MaterialTheme.colors.primaryVariant.copy(alpha = .25f),
                         contentColor = MaterialTheme.colors.onPrimary
                     )
                 }
@@ -87,12 +100,6 @@ fun PlaybackButtons(
 ) {
     Row(modifier = Modifier.animateContentSize()) {
         Row(Modifier.padding(0.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            CircleButton(onClick = { /*TODO*/ }) {
-                Icon(
-                    Icons.Default.SkipPrevious,
-                    "Skip Prev"
-                )
-            }
             Spacer(Modifier.width(8.dp))
             CircleButton(onClick = { /*TODO*/ }) {
                 Icon(
@@ -121,13 +128,6 @@ fun PlaybackButtons(
                     "Skip 5"
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            CircleButton(onClick = { /*TODO*/ }) {
-                Icon(
-                    Icons.Default.SkipNext,
-                    "Skip Next"
-                )
-            }
         }
     }
 }
@@ -141,11 +141,13 @@ fun PlaybackControlsPreview() {
         Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colors.primary) {
             PlaybackBackdrop(
                 playbackState = PlaybackStateCompat.STATE_PAUSED,
+                playbackProgress = 0,
                 currentPlaybackRec = Recording(
                     uri = Uri.EMPTY,
                     name = "New Recording",
                     duration = 0,
-                    size = 0
+                    size = 0,
+                    sizeStr = "0B"
                 ),
                 currentPlaybackRecData = RecordingData(
                     recordingUri = Uri.EMPTY.toString(),
@@ -155,7 +157,9 @@ fun PlaybackControlsPreview() {
                         Tag("2020")
                     )
                 ),
-                onPausePlayPlayback = { }
+                onPausePlayPlayback = { },
+                onSeekPlayback = { },
+                onOpenRecordingInfo = { }
             )
         }
     }
