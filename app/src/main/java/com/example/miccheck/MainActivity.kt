@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 // A surface container using the 'background' color from the theme
                 Surface {
-                    MainScreen(
+                    AppUI(
                         recordings = mainActivityVM.recordings,
                         recordingsData = mainActivityVM.recordingsData,
                         tags = mainActivityVM.tags,
@@ -213,7 +213,7 @@ class MainActivity : AppCompatActivity() {
                             )
                         },
                         onDeleteRecording = {
-                            mainActivityVM.onDeleteRecording(applicationContext, it)
+                            mainActivityVM.onDeleteRecording(applicationContext, this, it)
                         },
                         onSelectBackdrop = mainActivityVM::setBackdrop,
                         selectedBackdrop = mainActivityVM.selectedBackdrop

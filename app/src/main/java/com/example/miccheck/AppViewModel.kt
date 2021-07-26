@@ -1,5 +1,7 @@
 package com.example.miccheck
 
+import android.app.Activity
+import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -12,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.app.ActivityCompat.startIntentSenderForResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -75,12 +78,30 @@ class AppViewModel : ViewModel() {
 
     fun onDeleteRecording(
         context: Context,
+        activity: Activity,
         recording: Recording
     ) {
         val recordingData = recordingsData.find { it.recordingUri == recording.uri.toString() }
-        context.contentResolver.delete(
-            recording.uri, null, null
-        )
+        try {
+            context.contentResolver.delete(
+                recording.uri, null, null
+            )
+        } catch (securityException: RecoverableSecurityException) {
+            val intentSender =
+                securityException.userAction.actionIntent.intentSender
+            intentSender?.let {
+                startIntentSenderForResult(
+                    activity,
+                    it,
+                    1020,
+                    null,
+                    0,
+                    0,
+                    0,
+                    null
+                )
+            }
+        }
 
         recordings.remove(recording)
         recordingsData.remove(recordingData)

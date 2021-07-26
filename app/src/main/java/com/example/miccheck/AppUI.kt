@@ -3,6 +3,7 @@ package com.example.miccheck
 import android.content.ContentUris
 import android.net.Uri
 import android.support.v4.media.session.PlaybackStateCompat
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
@@ -16,12 +17,14 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -33,7 +36,7 @@ import java.time.LocalDateTime
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
 @Composable
-fun MainScreen(
+fun AppUI(
     recordings: List<Recording>,
     recordingsData: List<RecordingData>,
     tags: List<Tag>,
@@ -85,11 +88,14 @@ fun MainScreen(
         frontLayerBackgroundColor = MaterialTheme.colors.background,
         appBar = {
             TopBar(
-                onOpenBackdrop = { setBackdropOpen(true) }
+                navState = navState,
+                onOpenBackdrop = { setBackdropOpen(true) },
+                onOpenSearch = { navController.navigate("search") }
             )
         },
         frontLayerContent =
         {
+            var selectedSearchTagFilter by mutableStateOf<Tag?>(null)
             NavHost(navController = navController, startDestination = "recordingsScreen") {
                 composable("recordingsScreen") {
                     RecordingsScreen(
@@ -100,6 +106,10 @@ fun MainScreen(
                         onOpenPlayback = { onSelectBackdrop(1); setBackdropOpen(true) },
                         onOpenRecordingInfo = { recording ->
                             navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                        },
+                        onClickTag = {
+                            selectedSearchTagFilter = it
+                            navController.navigate("search")
                         }
                     )
                 }
@@ -189,6 +199,27 @@ fun MainScreen(
                             navController.navigateUp()
                         }
                     )
+                }
+                composable("search") {
+                    SearchScreen(
+                        recordings = recordings,
+                        recordingsData = recordingsData,
+                        groups = listOf(),
+                        tagFilter = selectedSearchTagFilter,
+                        onOpenRecordingInfo = { recording ->
+                            navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                        },
+                        onStartPlayback = onStartPlayback,
+                        onOpenPlayback = { onSelectBackdrop(1); setBackdropOpen(true) },
+                        onOpenSelectTag = { navController.navigate("selectTag") },
+                        onRemoveTagFilter = { selectedSearchTagFilter = null }
+                    )
+                }
+                composable("selectTag") {
+                    TagSelectScreen(tags = tags, onSelectTag = {
+                        navController.navigateUp()
+                        selectedSearchTagFilter = it
+                    })
                 }
             }
         },
@@ -281,8 +312,11 @@ private fun Backdrop(
     }
 }
 
+@ExperimentalAnimationApi
 @Composable
 fun TopBar(
+    navState: State<NavBackStackEntry?>,
+    onOpenSearch: () -> Unit,
     onOpenBackdrop: () -> Unit
 ) {
     var moreMenuExpanded by remember { mutableStateOf(false) }
@@ -300,12 +334,26 @@ fun TopBar(
         },
         actions = {
             Box {
-                Row(Modifier.align(Alignment.TopEnd)) {
+                Row(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .animateContentSize()
+                ) {
                     IconButton(onOpenBackdrop) {
                         Icon(
                             Icons.Filled.ExpandMore,
                             contentDescription = "Expand Backdrop"
                         )
+                    }
+                    AnimatedVisibility(
+                        visible = (navState.value?.destination?.route == "recordingsScreen")
+                    ) {
+                        IconButton(onClick = onOpenSearch) {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = "Search"
+                            )
+                        }
                     }
                     IconButton(onClick = {
                         moreMenuExpanded = true
@@ -399,7 +447,7 @@ fun MainScreenPreview() {
 
     MicCheckTheme {
         Surface {
-            MainScreen(
+            AppUI(
                 recordings = listOf(
                     Recording(
                         Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",

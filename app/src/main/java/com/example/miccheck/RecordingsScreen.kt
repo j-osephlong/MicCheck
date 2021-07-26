@@ -47,7 +47,8 @@ fun RecordingsScreen(
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
     onOpenPlayback: () -> Unit,
-    onOpenRecordingInfo: (Recording) -> Unit
+    onOpenRecordingInfo: (Recording) -> Unit,
+    onClickTag: (Tag) -> Unit
 ) {
     var selectedScreen by remember { mutableStateOf(0) }
 
@@ -77,7 +78,8 @@ fun RecordingsScreen(
                     currentPlaybackRec = currentPlaybackRec,
                     onStartPlayback = onStartPlayback,
                     onOpenPlayback = onOpenPlayback,
-                    onOpenRecordingInfo = onOpenRecordingInfo
+                    onOpenRecordingInfo = onOpenRecordingInfo,
+                    onClickTag = onClickTag
                 )
         }
     }
@@ -92,7 +94,8 @@ fun RecordingsList(
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
     onOpenPlayback: () -> Unit,
-    onOpenRecordingInfo: (Recording) -> Unit
+    onOpenRecordingInfo: (Recording) -> Unit,
+    onClickTag: (Tag) -> Unit
 ) {
 
     Log.e("RL", "Creating grouped")
@@ -109,8 +112,6 @@ fun RecordingsList(
                 }
 
                 itemsIndexed(recordings, key = { _, rec -> rec.first.uri }) { index, item ->
-                    if (index == 0)
-                        Spacer(modifier = Modifier.height(0.dp))
                     Column {
                         RecordingElm(
                             item,
@@ -122,7 +123,8 @@ fun RecordingsList(
                                     onStartPlayback(item.first)
                                     onOpenPlayback()
                                 }
-                            }
+                            },
+                            onClickTag = onClickTag
                         )
                         if (index != recordings.size - 1)
                             Divider(Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp))
@@ -545,7 +547,8 @@ fun RecordingScreenPreview() {
         currentPlaybackRec = null,
         onStartPlayback = {},
         onOpenPlayback = { /*TODO*/ },
-        onOpenRecordingInfo = {}
+        onOpenRecordingInfo = {},
+        onClickTag = {}
     )
 }
 
@@ -555,7 +558,8 @@ fun RecordingElm(
     rec: Pair<Recording, RecordingData>,
     modifier: Modifier = Modifier,
     onOpenRecordingInfo: (Recording) -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onClickTag: (Tag) -> Unit
 ) {
     Card(
         elevation = 0.dp,
@@ -618,7 +622,7 @@ fun RecordingElm(
                         Row {
                             Chip(
                                 text = item.name,
-                                onClick = { }
+                                onClick = { onClickTag(item) }
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }

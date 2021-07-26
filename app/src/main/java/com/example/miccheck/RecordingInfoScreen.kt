@@ -293,6 +293,39 @@ fun TagScreen(
     }
 }
 
+@Composable
+fun TagSelectScreen(
+    tags: List<Tag>,
+    onSelectTag: (Tag) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(18.dp)
+    ) {
+        Text(
+            "Select Tag",
+            style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+            modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
+        )
+        Text(
+            "Select a tag from below.",
+            style = MaterialTheme.typography.body1,
+            modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 18.dp)
+        )
+        FlowRow(Modifier.fillMaxWidth(), mainAxisSpacing = 8.dp, crossAxisSpacing = 8.dp) {
+            tags.forEach {
+                Chip(
+                    text = it.name,
+                    onClick = {
+                        onSelectTag(it)
+                    }
+                )
+            }
+        }
+    }
+}
+
 @Preview
 @Composable
 fun TagScreenPreview(
