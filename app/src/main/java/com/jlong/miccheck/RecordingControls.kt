@@ -1,4 +1,4 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -8,7 +8,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,12 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.miccheck.ui.theme.MicCheckTheme
+import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @ExperimentalFoundationApi
 @ExperimentalAnimationApi
 @Composable
 fun RecordingBackdrop(
+    elapsedRecordingTime: Long,
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
@@ -43,18 +44,30 @@ fun RecordingBackdrop(
             .animateContentSize()
             .fillMaxWidth()
     ) {
+        AnimatedVisibility(visible = (recordingState != RecordingState.WAITING)) {
+            Column {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        elapsedRecordingTime.toTimestamp(),
+                        style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
         TextField(
             value = titleText,
             setTitleText,
             modifier = Modifier.fillMaxWidth(),
             colors =
             TextFieldDefaults.textFieldColors(
-                backgroundColor = MaterialTheme.colors.primaryVariant.copy(
-                    alpha = .25f
-                ),
+                backgroundColor = MaterialTheme.colors.secondary,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color.Black,
+                cursorColor = MaterialTheme.colors.onSurface,
 
                 ),
             shape = RoundedCornerShape(40),
@@ -75,7 +88,11 @@ fun RecordingBackdrop(
                 onStartRecord = onStartRecord,
                 onPausePlayRecord = onPausePlayRecord,
                 onStopRecord = onStopRecord,
-                onFinishedRecording = { onFinishedRecording(titleText, descText) },
+                onFinishedRecording = {
+                    onFinishedRecording(titleText, descText)
+                    setTitleText("New Recording")
+                    setDescText("")
+                },
                 onCancel = onCancel
             )
         }
@@ -98,12 +115,10 @@ fun MetadataOptions(
             placeholder = { Text("Description") },
             colors =
             TextFieldDefaults.textFieldColors(
-                backgroundColor = MaterialTheme.colors.primaryVariant.copy(
-                    alpha = .25f
-                ),
+                backgroundColor = MaterialTheme.colors.secondary,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = Color.Black
+                cursorColor = MaterialTheme.colors.onSurface
             ),
             singleLine = false,
             shape = RoundedCornerShape(14.dp),
@@ -125,7 +140,7 @@ fun RecordingButtons(
     val focusManager = LocalFocusManager.current
 
     Row(modifier = Modifier.animateContentSize()) {
-        Row(Modifier.padding(0.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(0.dp, 0.dp), verticalAlignment = Alignment.CenterVertically) {
             LargeButton(
                 onClick =
                 {
@@ -144,12 +159,12 @@ fun RecordingButtons(
             ) {
                 Crossfade(targetState = recordingState) {
                     when (it) {
-                        RecordingState.WAITING -> Icon(Icons.Default.Mic, "Record")
+                        RecordingState.WAITING -> Icon(Icons.Rounded.Mic, "Record")
                         RecordingState.RECORDING, RecordingState.PAUSED -> Icon(
-                            Icons.Default.Stop,
+                            Icons.Rounded.Stop,
                             "Stop"
                         )
-                        RecordingState.STOPPED -> Icon(Icons.Default.Check, "Done")
+                        RecordingState.STOPPED -> Icon(Icons.Rounded.Check, "Done")
                     }
                 }
             }
@@ -176,14 +191,14 @@ fun RecordingButtons(
                         Crossfade(targetState = recordingState) {
                             when (it) {
                                 RecordingState.WAITING -> Icon(
-                                    Icons.Default.Close,
+                                    Icons.Rounded.Close,
                                     "Cancel"
                                 )
                                 RecordingState.RECORDING -> Icon(
-                                    Icons.Default.Pause,
+                                    Icons.Rounded.Pause,
                                     "Pause"
                                 )
-                                else -> Icon(Icons.Default.Mic, "Continue Recording")
+                                else -> Icon(Icons.Rounded.Mic, "Continue Recording")
                             }
                         }
                     }
@@ -199,8 +214,9 @@ fun RecordingButtons(
 @Composable
 fun RecordingControlsPreview() {
     MicCheckTheme {
-        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colors.primary) {
+        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colors.surface) {
             RecordingBackdrop(
+                elapsedRecordingTime = 0L,
                 onStartRecord = { /*TODO*/ },
                 onPausePlayRecord = { /*TODO*/ },
                 onStopRecord = { /*TODO*/ },

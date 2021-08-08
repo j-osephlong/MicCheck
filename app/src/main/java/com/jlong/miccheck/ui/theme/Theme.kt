@@ -1,4 +1,4 @@
-package com.example.miccheck.ui.theme
+package com.jlong.miccheck.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.MaterialTheme
@@ -8,19 +8,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorPalette = darkColors(
-    primary = DeepOrange50,
-    primaryVariant = DeepOrange200,
-    secondary = DeepOrange200Dark,
+    primary = DeepOrange200,
+    primaryVariant = DeepOrange200Dark,
+    secondary = Color(0xff956353),
     onPrimary = Color.Black,
-    onSecondary = Color.Black
+    onSecondary = Color.Black,
+    onBackground = Color.White,
+    onSurface = Color.White,
+    surface = Color.Black
 )
 
 private val LightColorPalette = lightColors(
-    primary = DeepOrange50,
-    primaryVariant = DeepOrange200,
-    secondary = DeepOrange200Dark,
+    primary = DeepOrange200,
+    primaryVariant = DeepOrange200Dark,
+    secondary = Color(0xffFDCDC1),
     onPrimary = Color.Black,
-    onSecondary = Color.Black
+    onSecondary = Color.Black,
+    surface = DeepOrange50,
+    onSurface = Color.Black
     /* Other default colors to override
     background = Color.White,
     surface = Color.White,

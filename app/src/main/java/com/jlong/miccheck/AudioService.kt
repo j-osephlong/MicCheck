@@ -1,5 +1,4 @@
-package com.example.miccheck
-
+package com.jlong.miccheck
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -10,6 +9,8 @@ import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -52,6 +53,8 @@ class AudioService : MediaBrowserServiceCompat() {
     private val emptyRootMediaId = "micCheck_empty_root_media_id"
 
     private val mMediaSessionCallback = object : MediaSessionCompat.Callback() {
+        private var handler: Handler? = null
+
         override fun onPlayFromUri(uri: Uri?, extras: Bundle?) {
             super.onPlayFromUri(uri, extras)
 
@@ -66,6 +69,7 @@ class AudioService : MediaBrowserServiceCompat() {
                 oldUri = uri
             }
             displayNotification()
+            updateCurrentPosition()
         }
 
         override fun onPlay() {
@@ -73,36 +77,88 @@ class AudioService : MediaBrowserServiceCompat() {
             currUri?.let {
                 onPlayFromUri(currUri, mediaExtras)
                 displayNotification()
+                updateCurrentPosition()
             }
         }
 
         override fun onSeekTo(pos: Long) {
             super.onSeekTo(pos)
             seek(pos)
+            updateCurrentPosition()
         }
 
         override fun onPause() {
             super.onPause()
             pause()
+            stopPlaybackStateUpdate()
             displayNotification()
             stopForeground(false)
+        }
+
+        override fun onRewind() {
+            super.onRewind()
+
+            val duration =
+                mMediaSession?.controller?.metadata?.bundle?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                    ?: 0L
+            val diff = if (duration < (1000 * 60 * 1.5))
+                -5
+            else if (duration > (1000 * 60 * 1.5) && duration < (1000 * 60 * 3))
+                -10
+            else
+                -30
+
+            seek(
+                ((mExoPlayer?.currentPosition ?: 0L) + diff * 1000)
+            )
+
+            updateCurrentPosition()
+        }
+
+        override fun onFastForward() {
+            super.onFastForward()
+            val duration =
+                mMediaSession?.controller?.metadata?.bundle?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                    ?: 0L
+            val diff = if (duration < (1000 * 60 * 1.5))
+                5
+            else if (duration > (1000 * 60 * 1.5) && duration < (1000 * 60 * 3))
+                10
+            else
+                30
+
+            seek(
+                ((mExoPlayer?.currentPosition ?: 0L) + diff * 1000)
+            )
+
+            updateCurrentPosition()
         }
 
         override fun onStop() {
             super.onStop()
             stop()
+            stopPlaybackStateUpdate()
             stopForeground(true)
         }
 
-//        override fun onCustomAction(action: String?, extras: Bundle?) {
-//            super.onCustomAction(action, extras)
-//            if (action == CUSTOM_ACTION_REPLAY)
-//            {
-//                onSeekTo(0)
-//                onPlay()
-//                displayNotification()
-//            }
-//        }
+
+        private fun updateCurrentPosition() {
+            if (mExoPlayer == null) {
+                return
+            }
+            if (handler == null) {
+                handler = Handler(Looper.getMainLooper())
+            }
+            handler?.postDelayed(Runnable {
+                updatePlaybackState(null)
+                updateCurrentPosition()
+            }, 250)
+        }
+
+        private fun stopPlaybackStateUpdate() {
+            handler?.removeCallbacksAndMessages(null)
+            handler = null
+        }
     }
 
     override fun onCreate() {
@@ -116,6 +172,7 @@ class AudioService : MediaBrowserServiceCompat() {
             mStateBuilder = PlaybackStateCompat.Builder()
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE
+                            or PlaybackStateCompat.ACTION_REWIND or PlaybackStateCompat.ACTION_FAST_FORWARD
                 )
 //                .addCustomAction(PlaybackStateCompat.CustomAction.Builder(
 //                    CUSTOM_ACTION_REPLAY,
@@ -217,6 +274,7 @@ class AudioService : MediaBrowserServiceCompat() {
     }
 
     private fun seek(pos: Long) {
+        Log.i("AudioService", "Seek $pos")
         mExoPlayer?.apply {
             seekTo(pos)
         }
@@ -242,7 +300,8 @@ class AudioService : MediaBrowserServiceCompat() {
             PlaybackStateCompat.Builder()
                 .setActions(
                     PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                            PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_STOP or PlaybackStateCompat.ACTION_SEEK_TO
+                            PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_STOP or PlaybackStateCompat.ACTION_SEEK_TO or
+                            PlaybackStateCompat.ACTION_FAST_FORWARD or PlaybackStateCompat.ACTION_REWIND
                 )
                 .setState(
                     state
@@ -250,7 +309,6 @@ class AudioService : MediaBrowserServiceCompat() {
                     , mExoPlayer?.currentPosition ?: 0L, 1.0f // Speed playing
                 ).build()
         )
-        Log.i("AudioService", "State posted - $state")
     }
 
     private var mAttrs: AudioAttributes? = null
@@ -342,6 +400,46 @@ class AudioService : MediaBrowserServiceCompat() {
         return Pair(pauseAction, playAction)
     }
 
+    private fun getReplayForwardActions():
+            Pair<Notification.Action, Notification.Action> {
+        val duration =
+            mMediaSession?.controller?.metadata?.bundle?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                ?: 0L
+        val replay = Notification.Action.Builder(
+            Icon.createWithResource(
+                this,
+                if (duration < (1000 * 60 * 1.5))
+                    R.drawable.ic_baseline_replay_5_24
+                else if (duration > (1000 * 60 * 1.5) && duration < (1000 * 60 * 3))
+                    R.drawable.ic_baseline_replay_10_24
+                else
+                    R.drawable.ic_baseline_replay_30_24
+            ), "Skip Backward",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_REWIND
+            )
+        ).build()
+
+        val forward = Notification.Action.Builder(
+            Icon.createWithResource(
+                this,
+                if (duration < (1000 * 60 * 1.5))
+                    R.drawable.ic_baseline_forward_5_24
+                else if (duration > (1000 * 60 * 1.5) && duration < (1000 * 60 * 3))
+                    R.drawable.ic_baseline_forward_10_24
+                else
+                    R.drawable.ic_baseline_forward_30_24
+            ), "Skip Forward",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_FAST_FORWARD
+            )
+        ).build()
+
+        return Pair(replay, forward)
+    }
+
     private fun getNotificationIntent(): PendingIntent {
         val openActivityIntent = Intent(
             this,
@@ -362,6 +460,7 @@ class AudioService : MediaBrowserServiceCompat() {
         val notificationIntent = getNotificationIntent()
         // 3
         val (pauseAction, playAction) = getPausePlayActions()
+        val (replayAction, forwardAction) = getReplayForwardActions()
         // 4
         val notification = Notification.Builder(
             this@AudioService, channelId
@@ -378,16 +477,27 @@ class AudioService : MediaBrowserServiceCompat() {
             )
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setSmallIcon(R.drawable.ic_notification_temp)
-            .addAction(
-                when (mMediaSession!!.controller.playbackState.state) {
-                    PlaybackStateCompat.STATE_PLAYING -> pauseAction
-                    else -> playAction
-                }
-            )
+            .also {
+                if (mMediaSession!!.controller.playbackState.state != PlaybackStateCompat.STATE_STOPPED)
+                    it.addAction(replayAction)
+                it.addAction(
+                    when (mMediaSession!!.controller.playbackState.state) {
+                        PlaybackStateCompat.STATE_PLAYING -> pauseAction
+                        else -> playAction
+                    }
+                )
+                if (mMediaSession!!.controller.playbackState.state != PlaybackStateCompat.STATE_STOPPED)
+                    it.addAction(forwardAction)
+            }
             .style =
             Notification.MediaStyle()
                 .setMediaSession(mMediaSession!!.sessionToken.token as MediaSession.Token?)
-                .setShowActionsInCompactView(0)
+                .also {
+                    if (mMediaSession!!.controller.playbackState.state != PlaybackStateCompat.STATE_STOPPED)
+                        it.setShowActionsInCompactView(0, 1, 2)
+                    else
+                        it.setShowActionsInCompactView(0)
+                }
 
         notificationBuilder = notification
     }
@@ -434,5 +544,3 @@ class AudioService : MediaBrowserServiceCompat() {
     }
 
 }
-
-

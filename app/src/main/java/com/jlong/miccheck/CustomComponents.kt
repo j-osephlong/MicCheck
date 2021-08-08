@@ -1,10 +1,12 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -13,8 +15,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.MicExternalOn
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.MicExternalOn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,15 +31,18 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
-import com.example.miccheck.ui.theme.MicCheckTheme
+import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
 fun SeekBar(
     progress: Float = 1f,
-    onUpdateProgress: (Float) -> Unit
+    onUpdateProgress: (Float) -> Unit,
+    modifier: Modifier = Modifier
 ) {
+//    val dragAmount
+
     BoxWithConstraints(
-        Modifier
+        modifier
             .fillMaxWidth()
             .height(20.dp)
     ) {
@@ -48,7 +53,10 @@ fun SeekBar(
                 .pointerInput(Unit) {
                     detectTapGestures {
                         onUpdateProgress(
-                            (it.x.toDp() + 10.dp) / (width)
+                            ((it.x.toDp()) / (width)).let {
+                                Log.i("SeekProg", "$it")
+                                it
+                            }
                         )
                     }
                 }
@@ -59,9 +67,7 @@ fun SeekBar(
                     .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = MaterialTheme.colors.primaryVariant.copy(
-                        alpha = .25f
-                    ),
+                    color = MaterialTheme.colors.secondary,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp)
@@ -77,29 +83,48 @@ fun SeekBar(
                     .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = MaterialTheme.colors.primaryVariant,
+                    color = MaterialTheme.colors.primary,
                     modifier = Modifier
+                        .padding(10.dp, 0.dp)
                         .fillMaxWidth(progress)
-                        .height(6.dp)
-                        .padding(10.dp, 0.dp),
+                        .height(6.dp),
                     shape = RoundedCornerShape(100)
                 ) {
 
                 }
             }
-            Row(
+            BoxWithConstraints(
                 Modifier
+                    .padding(10.dp, 0.dp)
+                    .fillMaxWidth()
                     .align(Alignment.TopStart)
-                    .offset(x = max(0.dp, (width * progress) - 20.dp)),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colors.primaryVariant,
-                    shape = CircleShape,
-                    modifier = Modifier.size(20.dp),
-                    elevation = 4.dp
-                ) {
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = {
 
+                            },
+                            onDragEnd = {
+
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+
+                            }
+                        )
+                    }
+            ) {
+                Row(
+                    Modifier
+                        .offset(x = max(0.dp, (maxWidth * progress) - 10.dp)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = MaterialTheme.colors.primary,
+                        shape = CircleShape,
+                        modifier = Modifier.size(20.dp),
+                        elevation = 4.dp
+                    ) {
+
+                    }
                 }
             }
         }
@@ -128,8 +153,8 @@ fun Chip(
     icon: ImageVector? = null,
     onIconClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colors.surface.copy(alpha = .2f),
-    contentColor: Color = MaterialTheme.colors.onSurface
+    color: Color = MaterialTheme.colors.background,
+    contentColor: Color = MaterialTheme.colors.onBackground
 ) {
     OutlinedButton(
         onClick = onClick,
@@ -174,7 +199,7 @@ fun LargeButton(
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            backgroundColor = MaterialTheme.colors.primaryVariant,
+            backgroundColor = MaterialTheme.colors.primary,
             contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
         ),
         shape = RoundedCornerShape(40),
@@ -194,9 +219,7 @@ fun CircleButton(
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            backgroundColor = MaterialTheme.colors.primaryVariant.copy(
-                alpha = .25f
-            ),
+            backgroundColor = MaterialTheme.colors.secondary,
             contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
         ),
         shape = CircleShape,
@@ -287,9 +310,7 @@ fun NewButtons(
             Surface(
                 Modifier.fillMaxWidth(.75f),
                 shape = RoundedCornerShape(100),
-                color = MaterialTheme.colors.primaryVariant.copy(
-                    alpha = .25f
-                )
+                color = MaterialTheme.colors.secondary
             ) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val width = maxWidth
@@ -360,7 +381,7 @@ fun NewButtons(
                             .align(Alignment.TopStart)
                             .offset(x = offset),
                         shape = RoundedCornerShape(100),
-                        color = MaterialTheme.colors.primaryVariant,
+                        color = MaterialTheme.colors.primary,
                     ) {
                         Column(
                             Modifier
@@ -393,7 +414,7 @@ fun NewButtons(
                                             "Play",
                                             style = MaterialTheme.typography.h6.copy(
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = MaterialTheme.colors.onSecondary.copy(
+                                                color = MaterialTheme.colors.onPrimary.copy(
                                                     alpha = .7f
                                                 )
                                             ),
@@ -424,7 +445,7 @@ fun ScreenSelectRow(
     buttons: @Composable () -> Unit
 ) {
     Row(modifier = modifier.horizontalScroll(rememberScrollState())) {
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(18.dp))
         buttons()
     }
 }
@@ -459,13 +480,13 @@ fun ButtonPreview () {
                 onClick = { onClick(0) },
                 selected = sel == 0,
                 text = "Recordings",
-                icon = Icons.Default.MicExternalOn
+                icon = Icons.Rounded.MicExternalOn
             )
             ScreenSelectButton(
                 onClick = { onClick(1) },
                 selected = sel == 1,
                 text = "Groups",
-                icon = Icons.Default.Inventory2
+                icon = Icons.Rounded.Inventory2
             )
         }
     }

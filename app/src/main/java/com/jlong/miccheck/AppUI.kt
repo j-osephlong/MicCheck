@@ -1,4 +1,4 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
 import android.content.ContentUris
 import android.net.Uri
@@ -7,20 +7,17 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -29,8 +26,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.miccheck.ui.theme.MicCheckTheme
-import java.time.LocalDateTime
+import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
@@ -40,22 +36,34 @@ fun AppUI(
     recordings: List<Recording>,
     recordingsData: List<RecordingData>,
     tags: List<Tag>,
+    groups: List<RecordingGroup>,
     recordingState: RecordingState,
     currentPlaybackRec: Recording?,
     playbackState: Int,
-    playbackProgress: Int,
+    playbackProgress: Long,
+    elapsedRecordingTime: Long,
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
     onFinishedRecording: (String, String) -> Unit,
+    onCreateGroup: (String, Uri?) -> Unit,
+    onAddRecordingsToGroup: (RecordingGroup, Recording?) -> Unit,
     onStartPlayback: (Recording) -> Unit,
     onPausePlayPlayback: () -> Unit,
-    onSeekPlayback: (Long) -> Unit,
-    onAddRecordingTag: (Recording, Tag) -> Unit,
+    onSeekPlayback: (Float) -> Unit,
+    onAddRecordingTag: (Recording?, Tag) -> Unit,
+    onDeleteTag: (Recording, Tag) -> Unit,
+    onAddRecordingTimestamp: (Recording, Long, String, String?) -> Unit,
+    onDeleteTimestamp: (Recording, TimeStamp) -> Unit,
     onEditFinished: (Recording, String, String) -> Unit,
-    onDeleteRecording: (Recording) -> Unit,
+    onShareRecordings: (Recording?) -> Unit,
+    onDeleteRecordings: (List<Recording>?) -> Unit,
     onSelectBackdrop: (Int) -> Unit,
     selectedBackdrop: Int,
+    selectedRecordings: List<Recording>,
+    onSelectRecording: (Recording) -> Unit,
+    onClearSelected: () -> Unit,
+    onChooseImage: ((Uri) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
     val navState = navController.currentBackStackEntryAsState()
@@ -65,10 +73,10 @@ fun AppUI(
         rememberBackdropScaffoldState(
             initialValue = BackdropValue.Concealed,
         )
+    var selectedSearchTagFilter by remember { mutableStateOf<Tag?>(null) }
 
-    val setBackdropOpen: (Boolean) -> Unit = {
-        backdropOpen = it
-        backdropTrigger = !backdropTrigger
+    LaunchedEffect(key1 = backdropScaffoldState.isRevealed) {
+        backdropOpen = backdropScaffoldState.isRevealed
     }
 
     LaunchedEffect(key1 = backdropOpen, key2 = backdropTrigger)
@@ -79,6 +87,12 @@ fun AppUI(
             backdropScaffoldState.conceal()
         }
     }
+
+    val setBackdropOpen: (Boolean) -> Unit = {
+        backdropOpen = it
+        backdropTrigger = !backdropTrigger
+    }
+
     BackdropScaffold(
         scaffoldState = backdropScaffoldState,
         gesturesEnabled = true,
@@ -89,18 +103,29 @@ fun AppUI(
         appBar = {
             TopBar(
                 navState = navState,
-                onOpenBackdrop = { setBackdropOpen(true) },
-                onOpenSearch = { navController.navigate("search") }
+                numSelected = selectedRecordings.size,
+                onOpenSearch = { navController.navigate("search") },
+                onShareRecordings = { onShareRecordings(null) },
+                onAddRecordingsToGroup = {
+                    navController.navigate("selectGroup/" + "null")
+                },
+                onTag = {
+                    navController.navigate("addTag/" + "null")
+                },
+                onDeleteRecordings = { onDeleteRecordings(null) },
+                onClearSelected = onClearSelected,
+                setBackdropOpen = setBackdropOpen,
+                backdropOpen = backdropOpen
             )
         },
         frontLayerContent =
         {
-            var selectedSearchTagFilter by mutableStateOf<Tag?>(null)
             NavHost(navController = navController, startDestination = "recordingsScreen") {
                 composable("recordingsScreen") {
                     RecordingsScreen(
                         recordings = recordings,
                         recordingsData = recordingsData,
+                        groups = groups,
                         currentPlaybackRec = currentPlaybackRec,
                         onStartPlayback = onStartPlayback,
                         onOpenPlayback = { onSelectBackdrop(1); setBackdropOpen(true) },
@@ -110,6 +135,11 @@ fun AppUI(
                         onClickTag = {
                             selectedSearchTagFilter = it
                             navController.navigate("search")
+                        },
+                        selectedRecordings = selectedRecordings,
+                        onSelectRecording = onSelectRecording,
+                        onCreateGroup = {
+                            navController.navigate("newGroup")
                         }
                     )
                 }
@@ -137,6 +167,9 @@ fun AppUI(
                                 setBackdropOpen(true)
                             }
                         },
+                        onShare = {
+                            onShareRecordings(recording!!)
+                        },
                         onDelete = {
                             showDeleteDialog = true
                         },
@@ -144,6 +177,21 @@ fun AppUI(
                             recording?.also {
                                 navController.navigate("addTag/" + ContentUris.parseId(it.uri))
                             }
+                        },
+                        onDeleteTag = {
+                            onDeleteTag(recording!!, it)
+                        },
+                        onClickTag = {
+                            selectedSearchTagFilter = it
+                            navController.navigate("search")
+                        },
+                        onPlayTimestamp = { time ->
+                            onStartPlayback(recording!!)
+                            onSeekPlayback(time / recording.duration.toFloat())
+                            setBackdropOpen(true)
+                        },
+                        onDeleteTimestamp = {
+                            onDeleteTimestamp(recording!!, it)
                         }
                     )
                     if (showDeleteDialog)
@@ -157,11 +205,12 @@ fun AppUI(
                                         showDeleteDialog = false
                                         navController.navigateUp()
                                         recording?.also {
-                                            onDeleteRecording(it)
+                                            onDeleteRecordings(listOf(it))
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(
-                                        contentColor = MaterialTheme.colors.primaryVariant
+                                        contentColor = MaterialTheme.colors.onBackground,
+                                        backgroundColor = MaterialTheme.colors.onBackground
                                     )
                                 ) {
                                     Text("Delete")
@@ -173,7 +222,8 @@ fun AppUI(
                                         showDeleteDialog = false
                                     },
                                     colors = ButtonDefaults.buttonColors(
-                                        contentColor = MaterialTheme.colors.onBackground
+                                        contentColor = MaterialTheme.colors.onBackground,
+                                        backgroundColor = MaterialTheme.colors.onBackground
                                     )
                                 ) {
                                     Text("Cancel")
@@ -186,9 +236,10 @@ fun AppUI(
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
                         ) ?: "")
-                    val recording = recordings.find { it.uri == Uri.parse(uri) }
-                    val recordingData =
-                        recordingsData.find { it.recordingUri == recording?.uri.toString() }
+                    val recording =
+                        if (uri == "null") null else recordings.find { it.uri == Uri.parse(uri) }
+                    val recordingData = if (recording == null) null else
+                        recordingsData.find { it.recordingUri == recording.uri.toString() }
 
                     TagScreen(
                         recording = recording,
@@ -196,6 +247,7 @@ fun AppUI(
                         tags = tags,
                         onAddTag = { rec, tag ->
                             onAddRecordingTag(rec, tag)
+                            onClearSelected()
                             navController.navigateUp()
                         }
                     )
@@ -212,7 +264,12 @@ fun AppUI(
                         onStartPlayback = onStartPlayback,
                         onOpenPlayback = { onSelectBackdrop(1); setBackdropOpen(true) },
                         onOpenSelectTag = { navController.navigate("selectTag") },
-                        onRemoveTagFilter = { selectedSearchTagFilter = null }
+                        onRemoveTagFilter = { selectedSearchTagFilter = null },
+                        onOpenTimeStamp = { rec, timeStamp ->
+                            onStartPlayback(rec)
+                            onSeekPlayback(timeStamp.timeMilli / rec.duration.toFloat())
+                            setBackdropOpen(true)
+                        }
                     )
                 }
                 composable("selectTag") {
@@ -221,9 +278,58 @@ fun AppUI(
                         selectedSearchTagFilter = it
                     })
                 }
+                composable("addTimestamp/{uri}/{timeMilli}") { backStackEntry ->
+                    val uri =
+                        "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
+                            "uri"
+                        ) ?: "")
+                    val recording = recordings.find { it.uri == Uri.parse(uri) }!!
+                    val timeMilli = backStackEntry.arguments?.getString("timeMilli")?.toLong()!!
+                    TimestampScreen(timeMilli = timeMilli, onComplete = { title, desc ->
+                        onAddRecordingTimestamp(
+                            recording,
+                            timeMilli,
+                            title,
+                            desc
+                        )
+                        navController.navigateUp()
+                        setBackdropOpen(true)
+                    })
+                }
+                composable("newGroup") {
+                    NewGroupScreen(
+                        onCreate = { name, uri ->
+                            onCreateGroup(name, uri)
+                            navController.navigateUp()
+                        },
+                        onChooseImage = onChooseImage
+                    )
+                }
+                composable("selectGroup/{uri}") { backStackEntry ->
+                    val uri =
+                        "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
+                            "uri"
+                        ) ?: "")
+                    val recording =
+                        if (uri == "null") null else recordings.find { it.uri == Uri.parse(uri) }
+
+                    SelectGroupScreen(
+                        groups = groups,
+                        recordingsData = recordingsData,
+                        onSelect = {
+                            onAddRecordingsToGroup(it, recording)
+                            onClearSelected()
+                            navController.navigateUp()
+                        },
+                        onCreateGroup = {
+                            navController.navigate("newGroup")
+                        }
+                    )
+                }
             }
         },
-        backLayerBackgroundColor = MaterialTheme.colors.primary,
+        backLayerBackgroundColor = MaterialTheme.colors.surface,
+        frontLayerScrimColor = MaterialTheme.colors.background.copy(alpha = .6f),
         backLayerContent = {
             Backdrop(
                 selectedBackdrop = selectedBackdrop,
@@ -243,6 +349,7 @@ fun AppUI(
                 recordingState = recordingState,
                 playbackState = playbackState,
                 playbackProgress = playbackProgress,
+                elapsedRecordingTime = elapsedRecordingTime,
                 currentPlaybackRec = currentPlaybackRec,
                 currentPlaybackRecData =
                 recordingsData.find { recData ->
@@ -252,6 +359,10 @@ fun AppUI(
                 onSeekPlayback = onSeekPlayback,
                 onOpenRecordingInfo = { recording ->
                     navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                    setBackdropOpen(false)
+                },
+                onAddRecordingTimestamp = { rec, time ->
+                    navController.navigate("addTimestamp/" + ContentUris.parseId(rec.uri) + "/" + time.toString())
                     setBackdropOpen(false)
                 }
             )
@@ -272,20 +383,24 @@ private fun Backdrop(
     onCancel: () -> Unit,
     recordingState: RecordingState,
     playbackState: Int,
-    playbackProgress: Int,
+    playbackProgress: Long,
+    elapsedRecordingTime: Long,
     currentPlaybackRec: Recording?,
     currentPlaybackRecData: RecordingData?,
     onPausePlayPlayback: () -> Unit,
-    onSeekPlayback: (Long) -> Unit,
-    onOpenRecordingInfo: (Recording) -> Unit
+    onSeekPlayback: (Float) -> Unit,
+    onOpenRecordingInfo: (Recording) -> Unit,
+    onAddRecordingTimestamp: (Recording, Long) -> Unit
 ) {
     Column {
+        Spacer(Modifier.height(2.dp))
         Crossfade(
             targetState = selectedBackdrop,
             modifier = Modifier.animateContentSize()
         ) {
             if (it == 0) {
                 RecordingBackdrop(
+                    elapsedRecordingTime = elapsedRecordingTime,
                     onStartRecord = onStartRecord,
                     onPausePlayRecord = onPausePlayRecord,
                     onStopRecord = onStopRecord,
@@ -301,7 +416,8 @@ private fun Backdrop(
                     currentPlaybackRecData = currentPlaybackRecData,
                     onPausePlayPlayback = onPausePlayPlayback,
                     onSeekPlayback = onSeekPlayback,
-                    onOpenRecordingInfo = onOpenRecordingInfo
+                    onOpenRecordingInfo = onOpenRecordingInfo,
+                    onAddRecordingTimestamp = onAddRecordingTimestamp
                 )
             }
         }
@@ -316,52 +432,96 @@ private fun Backdrop(
 @Composable
 fun TopBar(
     navState: State<NavBackStackEntry?>,
+    numSelected: Int,
     onOpenSearch: () -> Unit,
-    onOpenBackdrop: () -> Unit
+    onDeleteRecordings: () -> Unit,
+    onShareRecordings: () -> Unit,
+    onAddRecordingsToGroup: () -> Unit,
+    onTag: () -> Unit,
+    onClearSelected: () -> Unit,
+    setBackdropOpen: (Boolean) -> Unit,
+    backdropOpen: Boolean
 ) {
     var moreMenuExpanded by remember { mutableStateOf(false) }
+    val openBackdropButtonDegrees by animateFloatAsState(if (backdropOpen) 180f else 0f)
 
     TopAppBar(
         modifier = Modifier.height(71.dp),
-        backgroundColor = MaterialTheme.colors.primary,
+        backgroundColor = MaterialTheme.colors.surface,
         elevation = 0.dp,
-        contentColor = MaterialTheme.colors.onPrimary,
+        contentColor = MaterialTheme.colors.onSurface,
         title = {
-            Text(
-                "micCheck",
-                style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
-            )
+            if (numSelected <= 0)
+                Text(
+                    "micCheck",
+                    style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
+                )
+            else
+                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClearSelected) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Clear Selected"
+                        )
+                    }
+                    Text(
+                        "$numSelected Recording${if (numSelected > 1) "s" else ""}",
+                        style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold)
+                    )
+                }
         },
         actions = {
             Box {
-                Row(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .animateContentSize()
-                ) {
-                    IconButton(onOpenBackdrop) {
-                        Icon(
-                            Icons.Filled.ExpandMore,
-                            contentDescription = "Expand Backdrop"
-                        )
-                    }
-                    AnimatedVisibility(
-                        visible = (navState.value?.destination?.route == "recordingsScreen")
+                if (numSelected <= 0) {
+                    Row(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .animateContentSize()
                     ) {
-                        IconButton(onClick = onOpenSearch) {
+                        IconButton({ setBackdropOpen(!backdropOpen) }) {
                             Icon(
-                                Icons.Filled.Search,
-                                contentDescription = "Search"
+                                Icons.Rounded.ExpandMore,
+                                contentDescription = "Expand Backdrop",
+                                modifier = Modifier.rotate(openBackdropButtonDegrees)
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = (navState.value?.destination?.route == "recordingsScreen")
+                        ) {
+                            IconButton(onClick = { onOpenSearch(); setBackdropOpen(false) }) {
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = "Search"
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            moreMenuExpanded = true
+                        }) {
+                            Icon(
+                                Icons.Rounded.MoreVert,
+                                contentDescription = "More Options"
                             )
                         }
                     }
-                    IconButton(onClick = {
-                        moreMenuExpanded = true
-                    }) {
-                        Icon(
-                            Icons.Filled.MoreVert,
-                            contentDescription = "More Options"
-                        )
+                } else {
+                    Row(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .animateContentSize()
+                    ) {
+                        IconButton({ onShareRecordings(); onClearSelected() }) {
+                            Icon(Icons.Rounded.Share, "Share")
+                        }
+                        IconButton({ onAddRecordingsToGroup() }) {
+                            Icon(Icons.Rounded.Inventory2, "Add to Group")
+                        }
+                        IconButton({ onTag() }) {
+                            Icon(Icons.Rounded.Sell, "Group")
+                        }
+                        IconButton({ onDeleteRecordings(); onClearSelected() }) {
+                            Icon(Icons.Rounded.Delete, "Delete")
+                        }
                     }
                 }
 
@@ -403,6 +563,7 @@ fun BackdropPreview() {
                 recordingState = RecordingState.RECORDING,
                 playbackState = PlaybackStateCompat.STATE_PLAYING,
                 playbackProgress = 0,
+                elapsedRecordingTime = 0L,
                 currentPlaybackRec = Recording(
                     Uri.EMPTY,
                     "New Recording New Recording New",
@@ -417,68 +578,69 @@ fun BackdropPreview() {
                 ),
                 onPausePlayPlayback = { /*TODO*/ },
                 onSeekPlayback = { },
-                onOpenRecordingInfo = { }
+                onOpenRecordingInfo = { },
+                onAddRecordingTimestamp = { _, _ -> }
             )
         }
     }
 }
-
-@ExperimentalFoundationApi
-@ExperimentalMaterialApi
-@ExperimentalAnimationApi
-@Preview
-@Composable
-fun MainScreenPreview() {
-    var sel by remember {
-        mutableStateOf(0)
-    }
-    val onSelectScreen: (Int) -> Unit = {
-        sel = it
-    }
-    var selB by remember {
-        mutableStateOf(0)
-    }
-    val onSelectBackdrop: (Int) -> Unit = {
-        selB = it
-    }
-    var recording by remember {
-        mutableStateOf(RecordingState.WAITING)
-    }
-
-    MicCheckTheme {
-        Surface {
-            AppUI(
-                recordings = listOf(
-                    Recording(
-                        Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",
-                        date = LocalDateTime.now().plusDays(1)
-                    ),
-                    Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0, "0B"),
-                    Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0, "0B"),
-                ),
-                recordingsData = listOf(
-                    RecordingData(Uri.EMPTY.toString()),
-                    RecordingData(Uri.parse("file:///tmp/android.txt").toString()),
-                    RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
-                ),
-                tags = listOf(),
-                recordingState = recording,
-                currentPlaybackRec = null,
-                playbackState = PlaybackStateCompat.STATE_NONE,
-                playbackProgress = 0,
-                onStartRecord = { recording = RecordingState.RECORDING },
-                onPausePlayRecord = { },
-                onStopRecord = { recording = RecordingState.WAITING },
-                onFinishedRecording = { _, _ -> },
-                onStartPlayback = { /*TODO*/ },
-                onPausePlayPlayback = { /*TODO*/ },
-                onSeekPlayback = { },
-                onEditFinished = { _, _, _ -> },
-                onAddRecordingTag = { _, _ -> },
-                onDeleteRecording = { },
-                onSelectBackdrop = onSelectBackdrop,
-                selectedBackdrop = selB
-            )
-        }
-    }
-}
+//
+//@ExperimentalFoundationApi
+//@ExperimentalMaterialApi
+//@ExperimentalAnimationApi
+//@Preview
+//@Composable
+//fun MainScreenPreview() {
+//    var sel by remember {
+//        mutableStateOf(0)
+//    }
+//    val onSelectScreen: (Int) -> Unit = {
+//        sel = it
+//    }
+//    var selB by remember {
+//        mutableStateOf(0)
+//    }
+//    val onSelectBackdrop: (Int) -> Unit = {
+//        selB = it
+//    }
+//    var recording by remember {
+//        mutableStateOf(RecordingState.WAITING)
+//    }
+//
+//    MicCheckTheme {
+//        Surface {
+//            AppUI(
+//                recordings = listOf(
+//                    Recording(
+//                        Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",
+//                        date = LocalDateTime.now().plusDays(1)
+//                    ),
+//                    Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0, "0B"),
+//                    Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0, "0B"),
+//                ),
+//                recordingsData = listOf(
+//                    RecordingData(Uri.EMPTY.toString()),
+//                    RecordingData(Uri.parse("file:///tmp/android.txt").toString()),
+//                    RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
+//                ),
+//                tags = listOf(),
+//                recordingState = recording,
+//                currentPlaybackRec = null,
+//                playbackState = PlaybackStateCompat.STATE_NONE,
+//                playbackProgress = 0,
+//                onStartRecord = { recording = RecordingState.RECORDING },
+//                onPausePlayRecord = { },
+//                onStopRecord = { recording = RecordingState.WAITING },
+//                onFinishedRecording = { _, _ -> },
+//                onStartPlayback = { /*TODO*/ },
+//                onPausePlayPlayback = { /*TODO*/ },
+//                onSeekPlayback = { },
+//                onEditFinished = { _, _, _ -> },
+//                onAddRecordingTag = { _, _ -> },
+//                onDeleteRecording = { },
+//                onSelectBackdrop = onSelectBackdrop,
+//                selectedBackdrop = selB
+//            )
+//        }
+//    }
+//}

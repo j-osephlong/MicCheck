@@ -1,4 +1,4 @@
-package com.example.miccheck.ui.theme
+package com.jlong.miccheck.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Shapes

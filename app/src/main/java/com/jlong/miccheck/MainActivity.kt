@@ -1,12 +1,11 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.ComponentName
-import android.content.Intent
-import android.content.ServiceConnection
+import android.content.*
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.*
@@ -16,25 +15,31 @@ import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.toMutableStateList
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.example.miccheck.ui.theme.MicCheckTheme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.jlong.miccheck.ui.theme.MicCheckTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.util.*
 
 
 class MainActivity : AppCompatActivity() {
@@ -43,6 +48,9 @@ class MainActivity : AppCompatActivity() {
     private var mActivityMessenger: Messenger? = null
     private var mServiceMessenger: Messenger? = null
     private var recorderServiceConnection: RecorderServiceConnection? = null
+
+    private lateinit var imageResultLauncher: ActivityResultLauncher<Intent>
+    private var currentImageCallback: ((Uri) -> Unit)? = null
 
     @ExperimentalFoundationApi
     @ExperimentalAnimationApi
@@ -90,7 +98,30 @@ class MainActivity : AppCompatActivity() {
         lIntent.putExtra("Messenger", mActivityMessenger)
         startService(lIntent)
 
+        imageResultLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    // There are no request codes
+                    val data: Uri = result.data?.data ?: return@registerForActivityResult
+                    val destFile = File(
+                        applicationContext.filesDir.absolutePath,
+                        data.lastPathSegment!! + data.scheme
+                    )
+                        .also { it.createNewFile() }
+                    val outStream = FileOutputStream(destFile)
+                    val inStream = contentResolver.openInputStream(data)?.also {
+                        it.copyTo(outStream)
+                    }
+                    inStream?.close()
+                    outStream.close()
+
+                    currentImageCallback?.invoke(Uri.fromFile(destFile))
+                    currentImageCallback = null
+                }
+            }
+
         mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
+        mainActivityVM.requestFilePermission = this@MainActivity::requestFilePermission
         loadData()
         CoroutineScope(Dispatchers.IO).launch {
             mainActivityVM.loadRecordings(applicationContext)
@@ -102,13 +133,14 @@ class MainActivity : AppCompatActivity() {
 
             MicCheckTheme {
                 val systemUiController = rememberSystemUiController()
-                val statusBarColor = MaterialTheme.colors.primary
+                val statusBarColor = MaterialTheme.colors.surface
+                val darkIcons = !isSystemInDarkTheme()
                 SideEffect {
                     // Update all of the system bar colors to be transparent, and use
                     // dark icons if we're in light theme
                     systemUiController.setStatusBarColor(
                         color = statusBarColor,
-                        darkIcons = true
+                        darkIcons = darkIcons
                     )
 
                 }
@@ -118,10 +150,12 @@ class MainActivity : AppCompatActivity() {
                         recordings = mainActivityVM.recordings,
                         recordingsData = mainActivityVM.recordingsData,
                         tags = mainActivityVM.tags,
+                        groups = mainActivityVM.groups,
                         recordingState = mainActivityVM.recordingState,
-                        currentPlaybackRec = mainActivityVM.currentPlayBackRec,
+                        currentPlaybackRec = mainActivityVM.currentPlaybackRec,
                         playbackState = mainActivityVM.currentPlaybackState,
-                        playbackProgress = mediaController?.playbackState?.position?.toInt() ?: 0,
+                        playbackProgress = mainActivityVM.playbackProgress,
+                        elapsedRecordingTime = mainActivityVM.recordTime,
                         onStartRecord = { onStartRecord() },
                         onPausePlayRecord = { onPausePlayRecord() },
                         onStopRecord = {
@@ -131,10 +165,8 @@ class MainActivity : AppCompatActivity() {
                         },
                         onFinishedRecording = { title, desc ->
                             mainActivityVM.onRecordingFinished(applicationContext, title, desc)
-                            coroutineScope.launch {
-                                mainActivityVM.loadRecordings(applicationContext)
-                            }
                         },
+                        onCreateGroup = mainActivityVM::onCreateGroup,
                         onStartPlayback = {
                             val currRecData = it.let {
                                 mainActivityVM.recordingsData.find { rec ->
@@ -143,7 +175,8 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             mainActivityVM.setCurrentPlayback(it)
-                            mediaController.transportControls.playFromUri(it.uri,
+                            mediaController.transportControls.playFromUri(
+                                it.uri,
                                 Bundle().apply {
                                     putString(MediaMetadataCompat.METADATA_KEY_TITLE, it.name)
                                     putString(
@@ -163,7 +196,7 @@ class MainActivity : AppCompatActivity() {
                         },
                         onPausePlayPlayback = {
 
-                            val currRec = mainActivityVM.currentPlayBackRec
+                            val currRec = mainActivityVM.currentPlaybackRec
                             val currRecData = currRec.let {
                                 if (it == null)
                                     null
@@ -179,11 +212,11 @@ class MainActivity : AppCompatActivity() {
                             else if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PAUSED ||
                                 mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_STOPPED
                             )
-                                mediaController.transportControls.playFromUri(mainActivityVM.currentPlayBackRec!!.uri,
+                                mediaController.transportControls.playFromUri(mainActivityVM.currentPlaybackRec!!.uri,
                                     Bundle().apply {
                                         putString(
                                             MediaMetadataCompat.METADATA_KEY_TITLE,
-                                            mainActivityVM.currentPlayBackRec!!.name
+                                            mainActivityVM.currentPlaybackRec!!.name
                                         )
                                         putString(
                                             MediaMetadataCompat.METADATA_KEY_ALBUM,
@@ -195,15 +228,21 @@ class MainActivity : AppCompatActivity() {
                                         )
                                         putLong(
                                             MediaMetadataCompat.METADATA_KEY_DURATION,
-                                            mainActivityVM.currentPlayBackRec!!.duration.toLong()
+                                            mainActivityVM.currentPlaybackRec!!.duration.toLong()
                                         )
                                     }
                                 )
                         },
                         onSeekPlayback = {
-                            mediaController.transportControls.seekTo(it)
+                            mediaController.transportControls.seekTo(
+                                (it * (mainActivityVM.currentPlaybackRec?.duration ?: 0)).toLong()
+                            )
                         },
                         onAddRecordingTag = mainActivityVM::addTagToRecording,
+                        onDeleteTag = mainActivityVM::deleteTag,
+                        onAddRecordingTimestamp = mainActivityVM::addTimestampToRecording,
+                        onDeleteTimestamp = mainActivityVM::deleteTimestamp,
+                        onShareRecordings = this::onShare,
                         onEditFinished = { rec, title, desc ->
                             mainActivityVM.onEditRecordingDataFinished(
                                 applicationContext,
@@ -212,22 +251,46 @@ class MainActivity : AppCompatActivity() {
                                 desc
                             )
                         },
-                        onDeleteRecording = {
-                            mainActivityVM.onDeleteRecording(applicationContext, this, it)
+                        onDeleteRecordings = {
+                            mainActivityVM.onDeleteRecordings(
+                                applicationContext,
+                                it
+                            )
                         },
                         onSelectBackdrop = mainActivityVM::setBackdrop,
-                        selectedBackdrop = mainActivityVM.selectedBackdrop
+                        selectedBackdrop = mainActivityVM.selectedBackdrop,
+                        selectedRecordings = mainActivityVM.selectedRecordings,
+                        onSelectRecording = mainActivityVM::onSelectRecording,
+                        onClearSelected = {
+                            mainActivityVM.selectedRecordings.removeAll(mainActivityVM.selectedRecordings)
+                        },
+                        onChooseImage = this::onChooseImage,
+                        onAddRecordingsToGroup = mainActivityVM::addRecordingsToGroup
                     )
                 }
             }
         }
     }
 
+    private fun requestFilePermission(intentSender: IntentSender) {
+        ActivityCompat.startIntentSenderForResult(
+            this,
+            intentSender,
+            1020,
+            null,
+            0,
+            0,
+            0,
+            null
+        )
+    }
+
     private suspend fun serializeAndSaveData() {
         val packagedData = Json.encodeToString(
             PackagedData.serializer(), PackagedData(
                 recordingsData = mainActivityVM.recordingsData,
-                tags = mainActivityVM.tags
+                tags = mainActivityVM.tags,
+                groups = mainActivityVM.groups
             )
         )
 
@@ -247,10 +310,11 @@ class MainActivity : AppCompatActivity() {
             } catch (e: SerializationException) {
                 PackagedData(
                     listOf(),
+                    listOf(),
                     listOf()
                 )
             }
-
+        mainActivityVM.groups = unpackagedData.groups.toMutableStateList()
         mainActivityVM.tags = unpackagedData.tags.toMutableStateList()
         mainActivityVM.recordingsData = unpackagedData.recordingsData.toMutableStateList()
     }
@@ -331,12 +395,48 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    private fun onShare(recording: Recording?) {
+        fun shareOne(rec: Recording) {
+            val shareIntent: Intent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_STREAM, rec.uri)
+                type = "audio/*"
+            }
+            startActivity(Intent.createChooser(shareIntent, "Share your recording."))
+        }
+        if (recording != null) {
+            shareOne(recording)
+            return
+        }
+
+        val shareIntent = Intent().apply {
+            action = Intent.ACTION_SEND_MULTIPLE
+            putParcelableArrayListExtra(
+                Intent.EXTRA_STREAM,
+                ArrayList<Uri>().also {
+                    it.addAll(
+                        mainActivityVM.selectedRecordings.map { it.uri })
+                }
+            )
+            type = "audio/*"
+        }
+        startActivity(Intent.createChooser(shareIntent, "Share your recordings."))
+
+    }
+
+    private fun onChooseImage(callback: (Uri) -> Unit) {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+        }
+        currentImageCallback = callback
+        imageResultLauncher.launch(intent)
+    }
+
     private val mControllerCallback = object : MediaControllerCompat.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             super.onPlaybackStateChanged(state)
             mainActivityVM.currentPlaybackState = state?.state ?: PlaybackStateCompat.STATE_NONE
-
-            Log.i("mControllerCallback", "State change: " + state?.state)
+            mainActivityVM.playbackProgress = state?.position ?: 0L
         }
     }
 
@@ -376,6 +476,10 @@ class MainActivity : AppCompatActivity() {
                         mainActivityVM.currentRecordingUri = Uri.parse(uri)
                     mainActivityVM.recordingState = RecordingState.RECORDING
                 }
+                RecordingState.ELAPSED_TIME -> {
+                    val time = msg.data.getLong("ELAPSED")
+                    mainActivityVM.recordTime = time
+                }
                 else -> mainActivityVM.recordingState = msg.obj as RecordingState
             }
         }
@@ -410,10 +514,11 @@ class MainActivity : AppCompatActivity() {
         )
             return
         val msg = Message().apply {
-            if (mainActivityVM.recordingState == RecordingState.RECORDING)
+            if (mainActivityVM.recordingState == RecordingState.RECORDING) {
                 obj = RecorderActions.PAUSE
-            else if (mainActivityVM.recordingState == RecordingState.PAUSED)
+            } else if (mainActivityVM.recordingState == RecordingState.PAUSED) {
                 obj = RecorderActions.RESUME
+            }
         }
         mServiceMessenger?.send(msg)
     }

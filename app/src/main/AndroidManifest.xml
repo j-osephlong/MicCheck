@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.miccheck">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.jlong.miccheck">
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission
@@ -17,7 +18,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MicCheck">
         <service
-            android:name=".RecorderService"
+            android:name="com.jlong.miccheck.RecorderService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone" />
@@ -28,17 +29,19 @@
             </intent-filter>
         </receiver>
 
-        <service android:name=".AudioService">
+        <service android:name="com.jlong.miccheck.AudioService">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.jlong.miccheck.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MicCheck.NoActionBar">
+            android:theme="@style/Theme.MicCheck.NoActionBar"
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

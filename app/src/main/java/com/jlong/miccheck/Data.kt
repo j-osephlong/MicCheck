@@ -1,4 +1,4 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
@@ -8,13 +8,13 @@ import java.time.LocalDateTime
 
 data class Recording(
     val uri: Uri,
-    var name: String,
+    override var name: String,
     val duration: Int,
     // in bytes
     val size: Int,
     val sizeStr: String,
     val date: LocalDateTime = LocalDateTime.now(),
-)
+) : Searchable()
 
 data class RecordingKey(
     val day: Int,
@@ -30,7 +30,8 @@ data class RecordingData(
     var recordingUri: String,
     var tags: List<Tag> = listOf(),
     var description: String = "",
-    var group: RecordingGroup? = null
+    var group: RecordingGroup? = null,
+    var timeStamps: List<TimeStamp> = listOf()
 )
 
 @Serializable
@@ -47,7 +48,21 @@ data class Tag(
 )
 
 @Serializable
+data class TimeStamp(
+    val timeMilli: Long,
+    override var name: String,
+    var recordingName: String,
+    var recordingUri: String,
+    var description: String? = null
+) : Searchable()
+
+@Serializable
 data class PackagedData(
+    val groups: List<RecordingGroup>,
     val tags: List<Tag>,
     val recordingsData: List<RecordingData>
 )
+
+sealed class Searchable {
+    abstract val name: String
+}

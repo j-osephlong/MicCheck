@@ -1,4 +1,4 @@
-package com.example.miccheck
+package com.jlong.miccheck
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -20,7 +20,7 @@ enum class RecorderActions {
 }
 
 enum class RecordingState {
-    RECORDING, PAUSED, STOPPED, WAITING
+    RECORDING, PAUSED, STOPPED, WAITING, ELAPSED_TIME
 }
 
 class RecorderService : Service() {
@@ -34,6 +34,9 @@ class RecorderService : Service() {
     private val notificationChannelId = "micCheckRecordingControls"
     private val notificationId = 102
     private var notification: Notification? = null
+
+    var recordTimeHandler: Handler? = null
+    var recordTime: Long = 0
 
     @SuppressLint("HandlerLeak")
     /*TODO*/
@@ -82,8 +85,35 @@ class RecorderService : Service() {
         mActivityMessenger?.apply {
             send(lMsg)
         }
+        postElapsed()
 
         moveToForeground()
+
+        Log.i("RecorderService", "Recording started.")
+    }
+
+    private fun postElapsed() {
+        if (recordTimeHandler == null) {
+            recordTimeHandler = Handler(Looper.getMainLooper())
+        }
+        recordTimeHandler?.postDelayed(Runnable {
+            recordTime += 1000
+            val lMsg = Message().apply {
+                obj = RecordingState.ELAPSED_TIME
+                data = Bundle().apply {
+                    putLong("ELAPSED", recordTime)
+                }
+            }
+            mActivityMessenger?.apply {
+                send(lMsg)
+            }
+            postElapsed()
+        }, 1000)
+    }
+
+    private fun stopPostElapsed() {
+        recordTimeHandler?.removeCallbacksAndMessages(null)
+        recordTimeHandler = null
     }
 
     fun onPause() {
@@ -96,6 +126,8 @@ class RecorderService : Service() {
         mActivityMessenger?.apply {
             send(lMsg)
         }
+        stopPostElapsed()
+        Log.i("RecorderService", "Recording paused.")
     }
 
     fun onResume() {
@@ -111,6 +143,9 @@ class RecorderService : Service() {
         mActivityMessenger?.apply {
             send(lMsg)
         }
+        postElapsed()
+        Log.i("RecorderService", "Recording resumed.")
+
     }
 
     fun onStopRecord() {
@@ -130,6 +165,10 @@ class RecorderService : Service() {
         mActivityMessenger?.apply {
             send(lMsg)
         }
+        stopPostElapsed()
+        recordTime = 0
+        Log.i("RecorderService", "Recording stopped.")
+
     }
 
     private fun prepareRecorder() {
