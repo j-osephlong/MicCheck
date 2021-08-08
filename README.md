@@ -12,3 +12,8 @@ Not functional enough for installation yet. Currently efforts are being made on 
 # NOTE ABOUT THE AUTHOR - 
 
 This is my first time (excpet for some codelabs) ever making an android or jetpack compose app. 
+
+# Uses...
+
+- xdrop's fuzzy wuzzy java implementation
+- Mario Klingemann's Stack blur image blurring algorithim
