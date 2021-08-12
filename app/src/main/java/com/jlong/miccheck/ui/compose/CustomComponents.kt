@@ -1,14 +1,12 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
-import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,127 +21,72 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
+import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
-fun SeekBar(
-    progress: Float = 1f,
-    onUpdateProgress: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-//    val dragAmount
+fun StatusBarColor() {
+    val systemUiController = rememberSystemUiController()
+    val statusBarColor = MaterialTheme.colors.surface
+    val darkIcons = !isSystemInDarkTheme()
+    SideEffect {
+        // Update all of the system bar colors to be transparent, and use
+        // dark icons if we're in light theme
+        systemUiController.setStatusBarColor(
+            color = statusBarColor,
+            darkIcons = darkIcons
+        )
 
-    BoxWithConstraints(
-        modifier
-            .fillMaxWidth()
-            .height(20.dp)
-    ) {
-        val width = maxWidth
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures {
-                        onUpdateProgress(
-                            ((it.x.toDp()) / (width)).let {
-                                Log.i("SeekProg", "$it")
-                                it
-                            }
-                        )
-                    }
-                }
-        ) {
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colors.secondary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .padding(10.dp, 0.dp),
-                    shape = RoundedCornerShape(100)
-                ) {
-
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .align(Alignment.TopStart), verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colors.primary,
-                    modifier = Modifier
-                        .padding(10.dp, 0.dp)
-                        .fillMaxWidth(progress)
-                        .height(6.dp),
-                    shape = RoundedCornerShape(100)
-                ) {
-
-                }
-            }
-            BoxWithConstraints(
-                Modifier
-                    .padding(10.dp, 0.dp)
-                    .fillMaxWidth()
-                    .align(Alignment.TopStart)
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-
-                            },
-                            onDragEnd = {
-
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-
-                            }
-                        )
-                    }
-            ) {
-                Row(
-                    Modifier
-                        .offset(x = max(0.dp, (maxWidth * progress) - 10.dp)),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = MaterialTheme.colors.primary,
-                        shape = CircleShape,
-                        modifier = Modifier.size(20.dp),
-                        elevation = 4.dp
-                    ) {
-
-                    }
-                }
-            }
-        }
     }
 }
 
-@Preview
 @Composable
-fun SeekbarPreview() {
-    Surface(
-        color = Color.White,
-        modifier = Modifier
-            .padding(0.dp)
-            .fillMaxWidth()
-    ) {
-        MicCheckTheme {
-            SeekBar(.05f, {})
-        }
-    }
+fun ConfirmDialog(
+    title: String,
+    extraText: String?,
+    actionName: String,
+    visible: Boolean,
+    onClose: () -> Unit,
+    action: () -> Unit
+) {
+    if (visible)
+        AlertDialog(
+            onDismissRequest = onClose,
+            title = { Text(title) },
+            text = {
+                extraText?.also {
+                    Text(it)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = action,
+                    colors = ButtonDefaults.buttonColors(
+                        contentColor = MaterialTheme.colors.onBackground,
+                        backgroundColor = MaterialTheme.colors.background
+                    )
+                ) {
+                    Text(actionName)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(
+                        contentColor = MaterialTheme.colors.onBackground,
+                        backgroundColor = MaterialTheme.colors.background
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
 }
 
 @Composable
@@ -456,7 +399,7 @@ fun ChipPreview () {
     MicCheckTheme {
         Surface {
             Chip(
-                "deez nuts haha wow wowow",
+                "chip",
                 onClick = {}
             )
         }

@@ -29,16 +29,19 @@ class AppViewModel : ViewModel() {
     var currentPlaybackRec by mutableStateOf<Recording?>(null)
         private set
     var currentPlaybackState by mutableStateOf(PlaybackStateCompat.STATE_NONE)
+    var playbackProgress by mutableStateOf(0L)
+
     var currentRecordingUri: Uri? = null
     var recordingState by mutableStateOf(RecordingState.WAITING)
+
     var selectedBackdrop by mutableStateOf(0)
         private set
+
     var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0, "0B"))
     var recordingsData = mutableStateListOf<RecordingData>()
     var selectedRecordings = mutableStateListOf<Recording>()
     var tags = mutableStateListOf<Tag>()
     var groups = mutableStateListOf<RecordingGroup>()
-    var playbackProgress by mutableStateOf(0L)
 
     lateinit var serializeAndSave: suspend () -> Unit
     lateinit var requestFilePermission: (IntentSender) -> Unit
@@ -88,6 +91,9 @@ class AppViewModel : ViewModel() {
             return
         }
 
+        if (selectedRecordings.size < 1)
+            return
+
         selectedRecordings.forEach { rec ->
             val recDataRef = recordingsData.find { it.recordingUri == rec.uri.toString() }!!
             val recDataIndex = recordingsData.indexOf(recDataRef)
@@ -104,6 +110,8 @@ class AppViewModel : ViewModel() {
     }
 
     fun setBackdrop(backdrop: Int) {
+        if (backdrop > 1)
+            throw IllegalArgumentException("Invalid backdrop index.")
         selectedBackdrop = backdrop
     }
 
@@ -161,17 +169,22 @@ class AppViewModel : ViewModel() {
         context: Context,
         list: List<Recording>? = null
     ) {
-        (list ?: selectedRecordings).forEach { recording ->
-            val recordingData = recordingsData.find { it.recordingUri == recording.uri.toString() }
-            try {
-                context.contentResolver.delete(
-                    recording.uri, null, null
-                )
-            } catch (securityException: RecoverableSecurityException) {
-                val intentSender =
-                    securityException.userAction.actionIntent.intentSender
-                intentSender?.let {
-                    requestFilePermission(it)
+        (list ?: selectedRecordings.also {
+            if (it.size < 1)
+                return
+        }
+                ).forEach { recording ->
+                val recordingData =
+                    recordingsData.find { it.recordingUri == recording.uri.toString() }
+                try {
+                    context.contentResolver.delete(
+                        recording.uri, null, null
+                    )
+                } catch (securityException: RecoverableSecurityException) {
+                    val intentSender =
+                        securityException.userAction.actionIntent.intentSender
+                    intentSender?.let {
+                        requestFilePermission(it)
                 }
             }
 
@@ -222,8 +235,6 @@ class AppViewModel : ViewModel() {
     }
 
     fun addTagToRecording(recording: Recording?, tag: Tag) {
-        Log.i("ADDTAG", "${recording?.name}")
-        Log.i("ADDTAG", "${selectedRecordings.map { it.name + ',' }}")
         fun tagOne() {
             val recData = recordingsData.find {
                 Uri.parse(it.recordingUri) == recording!!.uri
@@ -243,6 +254,9 @@ class AppViewModel : ViewModel() {
             tagOne()
             return
         }
+
+        if (selectedRecordings.size < 1)
+            return
 
         selectedRecordings.forEach { rec ->
             val recData = recordingsData.find {
@@ -395,7 +409,7 @@ class AppViewModel : ViewModel() {
 
                 // Stores column values and the contentUri in a local object
                 // that represents the media file.
-                Log.e("VM", "Found file " + contentUri + " - $name - $dName")
+                Log.e("VM", "Found file $contentUri - $name - $dName")
                 recordings.add(
                     Recording(
                         contentUri,

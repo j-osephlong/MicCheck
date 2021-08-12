@@ -21,16 +21,15 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.toMutableStateList
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.google.accompanist.pager.ExperimentalPagerApi
+import com.jlong.miccheck.ui.compose.AppUI
+import com.jlong.miccheck.ui.compose.StatusBarColor
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +39,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.util.*
-
 
 class MainActivity : AppCompatActivity() {
     private val mainActivityVM by viewModels<AppViewModel>()
@@ -52,12 +50,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var imageResultLauncher: ActivityResultLauncher<Intent>
     private var currentImageCallback: ((Uri) -> Unit)? = null
 
+    @ExperimentalPagerApi
     @ExperimentalFoundationApi
     @ExperimentalAnimationApi
     @ExperimentalMaterialApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        /**
+         * #1
+         * Setup permissions
+         */
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.READ_EXTERNAL_STORAGE
@@ -84,7 +87,16 @@ class MainActivity : AppCompatActivity() {
             requestPermissions(permissions, 0)
         }
 
+        /**
+         * #2
+         * Setup notification channels
+         */
         createNotificationChannel()
+
+        /**
+         * #3
+         * Connect to AudioService
+         */
         val componentName = ComponentName(this, AudioService::class.java)
         // initialize the browser
         mMediaBrowserCompat = MediaBrowserCompat(
@@ -93,33 +105,19 @@ class MainActivity : AppCompatActivity() {
             null
         )
 
-        mActivityMessenger = Messenger(RecorderHandler())
+        /**
+         * #4
+         * Connect to RecorderService
+         */
+        mActivityMessenger = Messenger(recorderClient.RecorderHandler())
         val lIntent = Intent(this@MainActivity, RecorderService::class.java)
         lIntent.putExtra("Messenger", mActivityMessenger)
         startService(lIntent)
 
-        imageResultLauncher =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                if (result.resultCode == Activity.RESULT_OK) {
-                    // There are no request codes
-                    val data: Uri = result.data?.data ?: return@registerForActivityResult
-                    val destFile = File(
-                        applicationContext.filesDir.absolutePath,
-                        data.lastPathSegment!! + data.scheme
-                    )
-                        .also { it.createNewFile() }
-                    val outStream = FileOutputStream(destFile)
-                    val inStream = contentResolver.openInputStream(data)?.also {
-                        it.copyTo(outStream)
-                    }
-                    inStream?.close()
-                    outStream.close()
-
-                    currentImageCallback?.invoke(Uri.fromFile(destFile))
-                    currentImageCallback = null
-                }
-            }
-
+        /**
+         * #5
+         * Recall and validate user data
+         */
         mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
         mainActivityVM.requestFilePermission = this@MainActivity::requestFilePermission
         loadData()
@@ -128,22 +126,18 @@ class MainActivity : AppCompatActivity() {
             verifyData()
         }
 
+        /**
+         * #6
+         * Setup image chooser &
+         * Create compose UI with callbacks
+         */
+        imageResultLauncher = setupImageChooser()
+
         setContent {
             val coroutineScope = rememberCoroutineScope()
 
             MicCheckTheme {
-                val systemUiController = rememberSystemUiController()
-                val statusBarColor = MaterialTheme.colors.surface
-                val darkIcons = !isSystemInDarkTheme()
-                SideEffect {
-                    // Update all of the system bar colors to be transparent, and use
-                    // dark icons if we're in light theme
-                    systemUiController.setStatusBarColor(
-                        color = statusBarColor,
-                        darkIcons = darkIcons
-                    )
-
-                }
+                StatusBarColor()
                 // A surface container using the 'background' color from the theme
                 Surface {
                     AppUI(
@@ -156,11 +150,11 @@ class MainActivity : AppCompatActivity() {
                         playbackState = mainActivityVM.currentPlaybackState,
                         playbackProgress = mainActivityVM.playbackProgress,
                         elapsedRecordingTime = mainActivityVM.recordTime,
-                        onStartRecord = { onStartRecord() },
-                        onPausePlayRecord = { onPausePlayRecord() },
+                        onStartRecord = { recorderClient.onStartRecord() },
+                        onPausePlayRecord = { recorderClient.onPausePlayRecord() },
                         onStopRecord = {
                             coroutineScope.launch {
-                                onStopRecord()
+                                recorderClient.onStopRecord()
                             }
                         },
                         onFinishedRecording = { title, desc ->
@@ -272,69 +266,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestFilePermission(intentSender: IntentSender) {
-        ActivityCompat.startIntentSenderForResult(
-            this,
-            intentSender,
-            1020,
-            null,
-            0,
-            0,
-            0,
-            null
-        )
-    }
-
-    private suspend fun serializeAndSaveData() {
-        val packagedData = Json.encodeToString(
-            PackagedData.serializer(), PackagedData(
-                recordingsData = mainActivityVM.recordingsData,
-                tags = mainActivityVM.tags,
-                groups = mainActivityVM.groups
-            )
-        )
-
-        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
-        if (!dataFile.exists()) dataFile.createNewFile()
-        dataFile.writeText(packagedData)
-    }
-
-    private fun loadData() {
-        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
-        if (!dataFile.exists())
-            return
-        val packagedData = dataFile.readText()
-        val unpackagedData: PackagedData =
-            try {
-                Json.decodeFromString(PackagedData.serializer(), packagedData)
-            } catch (e: SerializationException) {
-                PackagedData(
-                    listOf(),
-                    listOf(),
-                    listOf()
-                )
-            }
-        mainActivityVM.groups = unpackagedData.groups.toMutableStateList()
-        mainActivityVM.tags = unpackagedData.tags.toMutableStateList()
-        mainActivityVM.recordingsData = unpackagedData.recordingsData.toMutableStateList()
-    }
-
-    private suspend fun verifyData() {
-        mainActivityVM.recordingsData.removeIf { recData ->
-            mainActivityVM.recordings.find {
-                it.uri.toString() == recData.recordingUri
-            } == null
-        }
-
-        mainActivityVM.tags.removeIf { tag ->
-            mainActivityVM.recordingsData.find { recData ->
-                recData.tags.find { tag.name == it.name } != null
-            } == null
-        }
-
-        serializeAndSaveData()
-    }
-
     override fun onStart() {
         super.onStart()
         // connect the controllers again to the session
@@ -366,6 +297,91 @@ class MainActivity : AppCompatActivity() {
         val controllerCompat = MediaControllerCompat.getMediaController(this)
         controllerCompat?.unregisterCallback(mControllerCallback)
         mMediaBrowserCompat.disconnect()
+    }
+
+    private fun requestFilePermission(intentSender: IntentSender) {
+        ActivityCompat.startIntentSenderForResult(
+            this,
+            intentSender,
+            1020,
+            null,
+            0,
+            0,
+            0,
+            null
+        )
+    }
+
+    private suspend fun serializeAndSaveData() {
+        val packagedData = Json.encodeToString(
+            PackagedData.serializer(), PackagedData(
+                recordingsData = mainActivityVM.recordingsData.toList() as List<VersionedRecordingData>,
+                tags = mainActivityVM.tags.toList() as List<VersionedTag>,
+                groups = mainActivityVM.groups.toList() as List<VersionedRecordingGroup>
+            )
+        )
+
+        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
+        if (!dataFile.exists()) dataFile.createNewFile()
+        dataFile.writeText(packagedData)
+    }
+
+    private fun loadData() {
+        val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
+        if (!dataFile.exists())
+            return
+        val packagedData = dataFile.readText()
+        val unpackedData: PackagedData =
+            try {
+                Json.decodeFromString(PackagedData.serializer(), packagedData)
+            } catch (e: SerializationException) {
+                PackagedData(
+                    listOf(),
+                    listOf(),
+                    listOf()
+                )
+            }
+        val currentVersionGroups = unpackedData.groups.let { groups ->
+            val list = mutableListOf<RecordingGroup>()
+            groups.forEach {
+                list.add(it.toLatestVersion())
+            }
+            list
+        }
+        val currentVersionTags = unpackedData.tags.let { tags ->
+            val list = mutableListOf<Tag>()
+            tags.forEach {
+                list.add(it.toLatestVersion())
+            }
+            list
+        }
+        val currentVersionRecordingData = unpackedData.recordingsData.let { recData ->
+            val list = mutableListOf<RecordingData>()
+            recData.forEach {
+                list.add(it.toLatestVersion())
+            }
+            list
+        }
+
+        mainActivityVM.groups = currentVersionGroups.toMutableStateList()
+        mainActivityVM.tags = currentVersionTags.toMutableStateList()
+        mainActivityVM.recordingsData = currentVersionRecordingData.toMutableStateList()
+    }
+
+    private suspend fun verifyData() {
+        mainActivityVM.recordingsData.removeIf { recData ->
+            mainActivityVM.recordings.find {
+                it.uri.toString() == recData.recordingUri
+            } == null
+        }
+
+        mainActivityVM.tags.removeIf { tag ->
+            mainActivityVM.recordingsData.find { recData ->
+                recData.tags.find { tag.name == it.name } != null
+            } == null
+        }
+
+        serializeAndSaveData()
     }
 
     private fun createNotificationChannel() {
@@ -409,6 +425,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (mainActivityVM.selectedRecordings.size < 1)
+            return
+
         val shareIntent = Intent().apply {
             action = Intent.ACTION_SEND_MULTIPLE
             putParcelableArrayListExtra(
@@ -423,6 +442,28 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent.createChooser(shareIntent, "Share your recordings."))
 
     }
+
+    private fun setupImageChooser() =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                // There are no request codes
+                val data: Uri = result.data?.data ?: return@registerForActivityResult
+                val destFile = File(
+                    applicationContext.filesDir.absolutePath,
+                    data.lastPathSegment!! + data.scheme
+                )
+                    .also { it.createNewFile() }
+                val outStream = FileOutputStream(destFile)
+                val inStream = contentResolver.openInputStream(data)?.also {
+                    it.copyTo(outStream)
+                }
+                inStream?.close()
+                outStream.close()
+
+                currentImageCallback?.invoke(Uri.fromFile(destFile))
+                currentImageCallback = null
+            }
+        }
 
     private fun onChooseImage(callback: (Uri) -> Unit) {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -466,24 +507,63 @@ class MainActivity : AppCompatActivity() {
 
         }
 
-    @SuppressLint("HandlerLeak")
-    inner class RecorderHandler : Handler(Looper.myLooper()!!) {
-        override fun handleMessage(msg: Message) {
-            when (msg.obj as RecordingState) {
-                RecordingState.RECORDING -> {
-                    val uri = msg.data.getString("URI")
-                    if ((uri ?: "").isNotBlank())
-                        mainActivityVM.currentRecordingUri = Uri.parse(uri)
-                    mainActivityVM.recordingState = RecordingState.RECORDING
+    private val recorderClient =
+        object {
+            @SuppressLint("HandlerLeak")
+            inner class RecorderHandler : Handler(Looper.myLooper()!!) {
+                override fun handleMessage(msg: Message) {
+                    when (msg.obj as RecordingState) {
+                        RecordingState.RECORDING -> {
+                            val uri = msg.data.getString("URI")
+                            if ((uri ?: "").isNotBlank())
+                                mainActivityVM.currentRecordingUri = Uri.parse(uri)
+                            mainActivityVM.recordingState = RecordingState.RECORDING
+                        }
+                        RecordingState.ELAPSED_TIME -> {
+                            val time = msg.data.getLong("ELAPSED")
+                            mainActivityVM.recordTime = time
+                        }
+                        else -> mainActivityVM.recordingState = msg.obj as RecordingState
+                    }
                 }
-                RecordingState.ELAPSED_TIME -> {
-                    val time = msg.data.getLong("ELAPSED")
-                    mainActivityVM.recordTime = time
-                }
-                else -> mainActivityVM.recordingState = msg.obj as RecordingState
             }
+
+            fun onStartRecord() {
+                val msg = Message().apply {
+                    obj = RecorderActions.START
+                }
+                mServiceMessenger?.apply {
+                    send(msg)
+                }
+                mainActivityVM.recordingState = RecordingState.RECORDING
+            }
+
+            fun onPausePlayRecord() {
+                if (mainActivityVM.recordingState != RecordingState.RECORDING &&
+                    mainActivityVM.recordingState != RecordingState.PAUSED
+                )
+                    return
+                val msg = Message().apply {
+                    if (mainActivityVM.recordingState == RecordingState.RECORDING) {
+                        obj = RecorderActions.PAUSE
+                    } else if (mainActivityVM.recordingState == RecordingState.PAUSED) {
+                        obj = RecorderActions.RESUME
+                    }
+                }
+                mServiceMessenger?.send(msg)
+            }
+
+            suspend fun onStopRecord() {
+                val lMsg = Message().apply {
+                    obj = RecorderActions.STOP
+                }
+                mServiceMessenger?.apply {
+                    send(lMsg)
+                }
+            }
+
         }
-    }
+
 
     inner class RecorderServiceConnection : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -495,40 +575,6 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(name: ComponentName) {
             mServiceMessenger = null
             unbindService(this)
-        }
-    }
-
-    private fun onStartRecord() {
-        val msg = Message().apply {
-            obj = RecorderActions.START
-        }
-        mServiceMessenger?.apply {
-            send(msg)
-        }
-        mainActivityVM.recordingState = RecordingState.RECORDING
-    }
-
-    private fun onPausePlayRecord() {
-        if (mainActivityVM.recordingState != RecordingState.RECORDING &&
-            mainActivityVM.recordingState != RecordingState.PAUSED
-        )
-            return
-        val msg = Message().apply {
-            if (mainActivityVM.recordingState == RecordingState.RECORDING) {
-                obj = RecorderActions.PAUSE
-            } else if (mainActivityVM.recordingState == RecordingState.PAUSED) {
-                obj = RecorderActions.RESUME
-            }
-        }
-        mServiceMessenger?.send(msg)
-    }
-
-    private suspend fun onStopRecord() {
-        val lMsg = Message().apply {
-            obj = RecorderActions.STOP
-        }
-        mServiceMessenger?.apply {
-            send(lMsg)
         }
     }
 }

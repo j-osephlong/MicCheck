@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 /**
 Utility function to format Long's representing milliseconds into timestamp Strings.

@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.jlong.miccheck.RecordingState
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @ExperimentalFoundationApi

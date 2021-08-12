@@ -32,12 +32,6 @@ import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
 import com.google.android.exoplayer2.util.Util
 
 class AudioService : MediaBrowserServiceCompat() {
-    val CUSTOM_ACTION_REPLAY = "REPLAY"
-    val replayAction = PlaybackStateCompat.CustomAction.Builder(
-        CUSTOM_ACTION_REPLAY,
-        "Replay",
-        R.drawable.ic_baseline_replay_24
-    ).build()
 
     private var mMediaSession: MediaSessionCompat? = null
     private lateinit var mStateBuilder: PlaybackStateCompat.Builder
@@ -149,7 +143,7 @@ class AudioService : MediaBrowserServiceCompat() {
             if (handler == null) {
                 handler = Handler(Looper.getMainLooper())
             }
-            handler?.postDelayed(Runnable {
+            handler?.postDelayed({
                 updatePlaybackState(null)
                 updateCurrentPosition()
             }, 250)

@@ -56,15 +56,15 @@ class RecorderService : Service() {
         return mServiceMessenger.binder
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        mServiceMessenger = Messenger(IncomingHandler())
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("RecorderService", "onStartCommand")
         mActivityMessenger = intent?.getParcelableExtra("Messenger")
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        mServiceMessenger = Messenger(IncomingHandler())
     }
 
     fun onStartRecord() {
@@ -96,7 +96,7 @@ class RecorderService : Service() {
         if (recordTimeHandler == null) {
             recordTimeHandler = Handler(Looper.getMainLooper())
         }
-        recordTimeHandler?.postDelayed(Runnable {
+        recordTimeHandler?.postDelayed({
             recordTime += 1000
             val lMsg = Message().apply {
                 obj = RecordingState.ELAPSED_TIME
@@ -212,11 +212,20 @@ class RecorderService : Service() {
         stopSelf()
     }
 
+    private fun getNotificationIntent(): PendingIntent {
+        val openActivityIntent = Intent(
+            this,
+            MainActivity::class.java
+        )
+        openActivityIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        return PendingIntent.getActivity(
+            this@RecorderService, 0, openActivityIntent,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun moveToForeground() {
-        val pendingIntent: PendingIntent =
-            Intent(this, MainActivity::class.java).let { notificationIntent ->
-                PendingIntent.getActivity(this, 0, notificationIntent, 0)
-            }
+        val pendingIntent = getNotificationIntent()
 
         notification = Notification.Builder(this, notificationChannelId)
             .setContentTitle("MicCheck Recording")

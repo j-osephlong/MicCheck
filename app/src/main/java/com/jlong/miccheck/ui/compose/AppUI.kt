@@ -1,12 +1,9 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import android.content.ContentUris
 import android.net.Uri
 import android.support.v4.media.session.PlaybackStateCompat
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -22,12 +19,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
+import com.google.accompanist.navigation.animation.AnimatedNavHost
+import com.google.accompanist.navigation.animation.composable
+import com.google.accompanist.navigation.animation.rememberAnimatedNavController
+import com.google.accompanist.pager.ExperimentalPagerApi
+import com.google.accompanist.pager.HorizontalPager
+import com.google.accompanist.pager.rememberPagerState
+import com.jlong.miccheck.*
 import com.jlong.miccheck.ui.theme.MicCheckTheme
+import kotlinx.coroutines.launch
 
+@ExperimentalPagerApi
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
 @ExperimentalAnimationApi
@@ -65,7 +68,7 @@ fun AppUI(
     onClearSelected: () -> Unit,
     onChooseImage: ((Uri) -> Unit) -> Unit
 ) {
-    val navController = rememberNavController()
+    val navController = rememberAnimatedNavController()
     val navState = navController.currentBackStackEntryAsState()
     var backdropOpen by remember { mutableStateOf(false) }
     var backdropTrigger by remember { mutableStateOf(false) }
@@ -120,7 +123,19 @@ fun AppUI(
         },
         frontLayerContent =
         {
-            NavHost(navController = navController, startDestination = "recordingsScreen") {
+            AnimatedNavHost(
+                navController = navController,
+                startDestination = "recordingsScreen",
+                enterTransition = { _, _ ->
+                    slideInHorizontally(initialOffsetX = { 2000 })
+                },
+                exitTransition = { _, _ ->
+                    slideOutHorizontally(targetOffsetX = { -2000 })
+                },
+                popEnterTransition = { _, _ ->
+                    slideInHorizontally(initialOffsetX = { -2000 })
+                }
+            ) {
                 composable("recordingsScreen") {
                     RecordingsScreen(
                         recordings = recordings,
@@ -140,6 +155,10 @@ fun AppUI(
                         onSelectRecording = onSelectRecording,
                         onCreateGroup = {
                             navController.navigate("newGroup")
+                        },
+                        onClearSelected = onClearSelected,
+                        onOpenGroup = { group ->
+                            navController.navigate("group/" + group.uuid)
                         }
                     )
                 }
@@ -194,42 +213,20 @@ fun AppUI(
                             onDeleteTimestamp(recording!!, it)
                         }
                     )
-                    if (showDeleteDialog)
-                        AlertDialog(
-                            onDismissRequest = { showDeleteDialog = false },
-                            title = { Text("Delete recording?") },
-                            text = { Text("Deleting is permanent and cannot be undone.") },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        showDeleteDialog = false
-                                        navController.navigateUp()
-                                        recording?.also {
-                                            onDeleteRecordings(listOf(it))
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        contentColor = MaterialTheme.colors.onBackground,
-                                        backgroundColor = MaterialTheme.colors.onBackground
-                                    )
-                                ) {
-                                    Text("Delete")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(
-                                    onClick = {
-                                        showDeleteDialog = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        contentColor = MaterialTheme.colors.onBackground,
-                                        backgroundColor = MaterialTheme.colors.onBackground
-                                    )
-                                ) {
-                                    Text("Cancel")
-                                }
-                            }
-                        )
+
+                    ConfirmDialog(
+                        title = "Delete recording?",
+                        extraText = "Deleting is permanent and cannot be undone.",
+                        actionName = "Delete",
+                        visible = showDeleteDialog,
+                        onClose = { showDeleteDialog = false }
+                    ) {
+                        showDeleteDialog = false
+                        navController.navigateUp()
+                        recording?.also {
+                            onDeleteRecordings(listOf(it))
+                        }
+                    }
                 }
                 composable("addTag/{uri}") { backStackEntry ->
                     val uri =
@@ -326,6 +323,30 @@ fun AppUI(
                         }
                     )
                 }
+                composable("group/{uuid}") { backStackEntry ->
+                    val uuid =
+                        (backStackEntry.arguments?.getString(
+                            "uuid"
+                        ) ?: "")
+                    val group = groups.find { it.uuid == uuid }!!
+                    val recData = recordingsData.filter { it.group?.uuid == uuid }
+                    val recs = recordings.filter { rec ->
+                        recordingsData.find { it.recordingUri == rec.uri.toString() }!!.group?.uuid == uuid
+                    }
+                    GroupScreen(
+                        group = group,
+                        recordings = recs,
+                        recordingsData = recData,
+                        onOpenRecordingInfo = { recording ->
+                            navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                        },
+                        onPlayRecording = {
+                            onStartPlayback(it)
+                            onSelectBackdrop(1)
+                            setBackdropOpen(true)
+                        }
+                    )
+                }
             }
         },
         backLayerBackgroundColor = MaterialTheme.colors.surface,
@@ -370,6 +391,7 @@ fun AppUI(
     )
 }
 
+@ExperimentalPagerApi
 @ExperimentalAnimationApi
 @ExperimentalFoundationApi
 @Composable
@@ -392,13 +414,26 @@ private fun Backdrop(
     onOpenRecordingInfo: (Recording) -> Unit,
     onAddRecordingTimestamp: (Recording, Long) -> Unit
 ) {
+    val pageState = rememberPagerState(pageCount = 2)
+    val coroutine = rememberCoroutineScope()
+    val setBackdrop: (Int) -> Unit = {
+        coroutine.launch {
+            pageState.animateScrollToPage(it)
+        }
+        onSelectBackdrop(it)
+    }
+    LaunchedEffect(key1 = selectedBackdrop) {
+        setBackdrop(selectedBackdrop)
+    }
+
     Column {
         Spacer(Modifier.height(2.dp))
-        Crossfade(
-            targetState = selectedBackdrop,
+        HorizontalPager(
+            state = pageState,
+            dragEnabled = false,
             modifier = Modifier.animateContentSize()
-        ) {
-            if (it == 0) {
+        ) { backdrop ->
+            if (backdrop == 0) {
                 RecordingBackdrop(
                     elapsedRecordingTime = elapsedRecordingTime,
                     onStartRecord = onStartRecord,
@@ -408,7 +443,7 @@ private fun Backdrop(
                     onCancel = onCancel,
                     recordingState = recordingState
                 )
-            } else if (it == 1) {
+            } else if (backdrop == 1) {
                 PlaybackBackdrop(
                     playbackState = playbackState,
                     playbackProgress = playbackProgress,
@@ -422,8 +457,8 @@ private fun Backdrop(
             }
         }
         NewButtons(
-            buttonPos = selectedBackdrop,
-            onClick = onSelectBackdrop
+            buttonPos = pageState.currentPage,
+            onClick = setBackdrop
         )
     }
 }
@@ -443,13 +478,26 @@ fun TopBar(
     backdropOpen: Boolean
 ) {
     var moreMenuExpanded by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val openBackdropButtonDegrees by animateFloatAsState(if (backdropOpen) 180f else 0f)
+
+    val clearIcon: @Composable (() -> Unit)? = if (numSelected > 0) {
+        {
+            IconButton(onClearSelected) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "Clear"
+                )
+            }
+        }
+    } else null
 
     TopAppBar(
         modifier = Modifier.height(71.dp),
         backgroundColor = MaterialTheme.colors.surface,
         elevation = 0.dp,
         contentColor = MaterialTheme.colors.onSurface,
+        navigationIcon = clearIcon,
         title = {
             if (numSelected <= 0)
                 Text(
@@ -457,18 +505,10 @@ fun TopBar(
                     style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
                 )
             else
-                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClearSelected) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = "Clear Selected"
-                        )
-                    }
-                    Text(
-                        "$numSelected Recording${if (numSelected > 1) "s" else ""}",
-                        style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold)
-                    )
-                }
+                Text(
+                    "$numSelected",
+                    style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
+                )
         },
         actions = {
             Box {
@@ -500,7 +540,7 @@ fun TopBar(
                         }) {
                             Icon(
                                 Icons.Rounded.MoreVert,
-                                contentDescription = "More Options"
+                                contentDescription = "Options"
                             )
                         }
                     }
@@ -514,12 +554,12 @@ fun TopBar(
                             Icon(Icons.Rounded.Share, "Share")
                         }
                         IconButton({ onAddRecordingsToGroup() }) {
-                            Icon(Icons.Rounded.Inventory2, "Add to Group")
+                            Icon(Icons.Rounded.Inventory2, "Group")
                         }
                         IconButton({ onTag() }) {
-                            Icon(Icons.Rounded.Sell, "Group")
+                            Icon(Icons.Rounded.Sell, "Tag")
                         }
-                        IconButton({ onDeleteRecordings(); onClearSelected() }) {
+                        IconButton({ showDeleteDialog = true }) {
                             Icon(Icons.Rounded.Delete, "Delete")
                         }
                     }
@@ -543,8 +583,21 @@ fun TopBar(
             }
         }
     )
+
+    ConfirmDialog(
+        title = "Delete $numSelected recording${if (numSelected > 1) "s" else ""}?",
+        extraText = "Deleting is permanent and cannot be undone.",
+        actionName = "Delete",
+        visible = showDeleteDialog,
+        onClose = { showDeleteDialog = false }
+    ) {
+        onDeleteRecordings()
+        onClearSelected()
+        showDeleteDialog = false
+    }
 }
 
+@ExperimentalPagerApi
 @ExperimentalFoundationApi
 @ExperimentalAnimationApi
 @Preview

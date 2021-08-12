@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import android.net.Uri
 import android.os.Handler
@@ -23,6 +23,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.jlong.miccheck.Recording
+import com.jlong.miccheck.RecordingData
+import com.jlong.miccheck.Tag
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
@@ -88,19 +91,6 @@ fun PlaybackBackdrop(
         ) {
             Text(playbackProgress.toTimestamp())
             Spacer(Modifier.width(8.dp))
-//            Log.e("updateProg", "${currentPlaybackRec?.duration} - ${currentPlaybackRec?.name}")
-//            SeekBar(
-//                onUpdateProgress = {
-//                    if (currentPlaybackRec != null) {
-//                        Log.e("updateProg", "$it - ${currentPlaybackRec.duration} - ${currentPlaybackRec.name}")
-//                        onSeekPlayback(it)
-//                    }
-//                },
-//                progress = if (currentPlaybackRec != null) (
-//                        playbackProgress / (currentPlaybackRec.duration.toFloat())
-//                        ) else 0f,
-//                modifier = Modifier.fillMaxWidth(.85f)
-//            )
             var valChanging by remember { mutableStateOf(false) }
             var newVal by remember { mutableStateOf(0f) }
             Slider(

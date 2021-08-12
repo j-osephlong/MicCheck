@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import android.net.Uri
 import android.util.Log
@@ -13,9 +13,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Launch
-import androidx.compose.material.icons.rounded.MicExternalOn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,12 +21,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.google.accompanist.pager.ExperimentalPagerApi
+import com.google.accompanist.pager.HorizontalPager
+import com.google.accompanist.pager.rememberPagerState
+import com.jlong.miccheck.*
+import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 
 
+@ExperimentalPagerApi
 @ExperimentalMaterialApi
 @ExperimentalFoundationApi
 @ExperimentalAnimationApi
@@ -44,48 +48,80 @@ fun RecordingsScreen(
     onOpenRecordingInfo: (Recording) -> Unit,
     onClickTag: (Tag) -> Unit,
     onSelectRecording: (Recording) -> Unit,
-    onCreateGroup: () -> Unit
+    onCreateGroup: () -> Unit,
+    onClearSelected: () -> Unit,
+    onOpenGroup: (RecordingGroup) -> Unit
 ) {
-    var selectedScreen by remember { mutableStateOf(0) }
-
-    Column(Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(18.dp))
-        ScreenSelectRow {
-            ScreenSelectButton(
-                onClick = { selectedScreen = 0; Log.e("WHICHONE", "RECORDINGS " + selectedScreen) },
-                selected = selectedScreen == 0,
-                text = "Recordings",
-                icon = Icons.Rounded.MicExternalOn
-            )
-            ScreenSelectButton(
-                onClick = { selectedScreen = 1; Log.e("WHICHONE", "GROUPS " + selectedScreen) },
-                selected = selectedScreen == 1,
-                text = "Groups",
-                icon = Icons.Rounded.Inventory2
-            )
+    val pageState = rememberPagerState(pageCount = 2)
+    val coroutine = rememberCoroutineScope()
+    val setPage: (Int) -> Unit = { page ->
+        coroutine.launch {
+            pageState.animateScrollToPage(page)
         }
-        Spacer(modifier = Modifier.height(18.dp))
+        onClearSelected()
+    }
 
-        Crossfade(selectedScreen) {
-            if (it == 0)
-                RecordingsList(
-                    recordings = recordings,
-                    recordingsData = recordingsData,
-                    selectedRecordings = selectedRecordings,
-                    currentPlaybackRec = currentPlaybackRec,
-                    onStartPlayback = onStartPlayback,
-                    onOpenPlayback = onOpenPlayback,
-                    onOpenRecordingInfo = onOpenRecordingInfo,
-                    onClickTag = onClickTag,
-                    onSelectRecording = onSelectRecording
-                )
-            else
-                GroupsList(
-                    recordingsData = recordingsData,
-                    groups = groups,
-                    onClickGroup = {},
-                    onCreateGroup = onCreateGroup
-                )
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
+        HorizontalPager(
+            state = pageState,
+            modifier = Modifier.fillMaxSize(),
+            dragEnabled = true
+        ) { page ->
+            when (page) {
+                0 ->
+                    Column {
+                        ListPageHeader("Recordings", onClick = { setPage(1) }) {
+                            Text("Groups >", fontWeight = FontWeight.SemiBold)
+                        }
+                        RecordingsList(
+                            recordings = recordings,
+                            recordingsData = recordingsData,
+                            selectedRecordings = selectedRecordings,
+                            currentPlaybackRec = currentPlaybackRec,
+                            onStartPlayback = onStartPlayback,
+                            onOpenPlayback = onOpenPlayback,
+                            onOpenRecordingInfo = onOpenRecordingInfo,
+                            onClickTag = onClickTag,
+                            onSelectRecording = onSelectRecording,
+                            modifier = Modifier
+                                .fillMaxSize()
+                        )
+                    }
+                1 ->
+                    Column {
+                        ListPageHeader("Groups", onClick = { setPage(0) }) {
+                            Text("< Recordings", fontWeight = FontWeight.SemiBold)
+                        }
+                        GroupsList(
+                            recordingsData = recordingsData,
+                            groups = groups,
+                            onClickGroup = onOpenGroup,
+                            onCreateGroup = onCreateGroup,
+                            modifier = Modifier
+                                .fillMaxSize()
+                        )
+                    }
+            }
+        }
+    }
+}
+
+@Composable
+fun ListPageHeader(
+    text: String,
+    onClick: () -> Unit,
+    buttonText: @Composable () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(18.dp, 22.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text, style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold))
+        TextButton(onClick = onClick) {
+            buttonText()
         }
     }
 }
@@ -102,7 +138,8 @@ fun RecordingsList(
     onOpenPlayback: () -> Unit,
     onOpenRecordingInfo: (Recording) -> Unit,
     onClickTag: (Tag) -> Unit,
-    onSelectRecording: (Recording) -> Unit
+    onSelectRecording: (Recording) -> Unit,
+    modifier: Modifier = Modifier
 ) {
 
     var recordingsGrouped by remember { mutableStateOf(mapOf<RecordingKey, List<Pair<Recording, RecordingData>>>()) }
@@ -111,7 +148,7 @@ fun RecordingsList(
     val recData = recordingsData.toMutableList().apply { sortByDescending { it.recordingUri } }
     recordingsGrouped = rec.zip(recData).groupBy { it.first.toDateKey() }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(modifier) {
         LazyColumn(Modifier.fillMaxSize()) {
             recordingsGrouped.forEach { (_, recordings) ->
                 stickyHeader {
@@ -183,6 +220,7 @@ fun DateHeader(date: LocalDateTime) {
     }
 }
 
+@ExperimentalPagerApi
 @ExperimentalAnimationApi
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
@@ -205,14 +243,16 @@ fun RecordingScreenPreview() {
                 RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
             ),
             groups = listOf(),
+            selectedRecordings = listOf(),
             currentPlaybackRec = null,
             onStartPlayback = {},
             onOpenPlayback = { /*TODO*/ },
             onOpenRecordingInfo = {},
             onClickTag = {},
-            selectedRecordings = listOf(),
             onSelectRecording = { },
-            onCreateGroup = { }
+            onCreateGroup = { },
+            onClearSelected = { },
+            onOpenGroup = {}
         )
     }
 }

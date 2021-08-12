@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jlong.miccheck.*
 import me.xdrop.fuzzywuzzy.FuzzySearch
 
 @ExperimentalFoundationApi
@@ -58,96 +59,98 @@ fun SearchScreen(
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(0.dp, 18.dp, 0.dp, 0.dp)
-    ) {
-        Row {
-            Spacer(Modifier.width(18.dp))
-            Text(
-                "Search",
-                style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
-                modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
-            )
-        }
-        Row {
-            TextField(
-                value = text,
-                onValueChange = setText,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp, 0.dp, 18.dp, 0.dp),
-                placeholder = {
-                    Text(
-                        "Search for a recording",
-                        style = MaterialTheme.typography.h6
-                    )
-                },
-                colors =
-                TextFieldDefaults.textFieldColors(
-                    backgroundColor =
-                    if (isSystemInDarkTheme()) MaterialTheme.colors.secondary
-                    else
-                        MaterialTheme.colors.surface.copy(
-                            alpha = .65f
-                        ),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colors.onSurface
-                ),
-                shape = RoundedCornerShape(14.dp),
-                textStyle = MaterialTheme.typography.h6,
-                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Row {
-            Spacer(Modifier.width(18.dp))
-            Chip(
-                tagFilter?.name ?: "Filter by tag",
-                if (tagFilter == null) onOpenSelectTag else {
-                    {}
-                },
-                icon = if (tagFilter == null) Icons.Rounded.Add else Icons.Rounded.Close,
-                onIconClick = {
-                    if (tagFilter != null) {
-                        onRemoveTagFilter()
-                        results = listOf()
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(0.dp, 18.dp, 0.dp, 0.dp)
+        ) {
+            Row {
+                Spacer(Modifier.width(18.dp))
+                Text(
+                    "Search",
+                    style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+                    modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
+                )
+            }
+            Row {
+                TextField(
+                    value = text,
+                    onValueChange = setText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp, 0.dp, 18.dp, 0.dp),
+                    placeholder = {
+                        Text(
+                            "Search for a recording",
+                            style = MaterialTheme.typography.h6
+                        )
+                    },
+                    colors =
+                    TextFieldDefaults.textFieldColors(
+                        backgroundColor =
+                        if (isSystemInDarkTheme()) MaterialTheme.colors.secondary
+                        else
+                            MaterialTheme.colors.surface.copy(
+                                alpha = .65f
+                            ),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colors.onSurface
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    textStyle = MaterialTheme.typography.h6,
+                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row {
+                Spacer(Modifier.width(18.dp))
+                Chip(
+                    tagFilter?.name ?: "Filter by tag",
+                    if (tagFilter == null) onOpenSelectTag else {
+                        {}
+                    },
+                    icon = if (tagFilter == null) Icons.Rounded.Add else Icons.Rounded.Close,
+                    onIconClick = {
+                        if (tagFilter != null) {
+                            onRemoveTagFilter()
+                            results = listOf()
+                        }
                     }
+                )
+            }
+
+            LaunchedEffect(key1 = text, key2 = tagFilter) {
+                //fuzzywuzzy search
+                results =
+                    if (text.isBlank() && tagFilter != null)
+                        recordings
+                            .filter { rec ->
+                                recordingsData.find { it.recordingUri == rec.uri.toString() }!!
+                                    .tags.find { it.name == tagFilter.name } != null
+                            }
+                    else
+                        searchAlgorithm(
+                            text,
+                            recordings = recordings,
+                            recordingsData = recordingsData,
+                            tagFilter = tagFilter
+                        )
+            }
+
+            ResultsList(
+                results = results,
+                recordingsData = recordingsData,
+                onOpenRecordingInfo = onOpenRecordingInfo,
+                onStartPlayback = onStartPlayback,
+                onOpenPlayback = onOpenPlayback,
+                onOpenTimeStamp = { uri, timeStamp ->
+                    onOpenTimeStamp(recordings.find { it.uri == uri }!!, timeStamp)
                 }
             )
         }
-
-        LaunchedEffect(key1 = text, key2 = tagFilter) {
-            //fuzzywuzzy search
-            results =
-                if (text.isBlank() && tagFilter != null)
-                    recordings
-                        .filter { rec ->
-                            recordingsData.find { it.recordingUri == rec.uri.toString() }!!
-                                .tags.find { it.name == tagFilter.name } != null
-                        }
-                else
-                    searchAlgorithm(
-                        text,
-                        recordings = recordings,
-                        recordingsData = recordingsData,
-                        tagFilter = tagFilter
-                    )
-        }
-
-        ResultsList(
-            results = results,
-            recordingsData = recordingsData,
-            onOpenRecordingInfo = onOpenRecordingInfo,
-            onStartPlayback = onStartPlayback,
-            onOpenPlayback = onOpenPlayback,
-            onOpenTimeStamp = { uri, timeStamp ->
-                onOpenTimeStamp(recordings.find { it.uri == uri }!!, timeStamp)
-            }
-        )
     }
 }
 
