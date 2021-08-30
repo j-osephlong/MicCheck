@@ -1,5 +1,7 @@
 package com.jlong.miccheck.ui.compose
 
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -20,14 +22,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.capitalize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.toUpperCase
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.jlong.miccheck.RecordingGroup
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
@@ -43,6 +50,75 @@ fun StatusBarColor() {
             darkIcons = darkIcons
         )
 
+    }
+}
+
+/**
+ * Source : https://dev.to/pawegio/handling-back-presses-in-jetpack-compose-50d5
+ * Back press override
+ */
+@Composable
+fun BackHandler(enabled: Boolean = true, onBack: () -> Unit) {
+    // Safely update the current `onBack` lambda when a new one is provided
+    val currentOnBack by rememberUpdatedState(onBack)
+    // Remember in Composition a back callback that calls the `onBack` lambda
+    val backCallback = remember {
+        object : OnBackPressedCallback(enabled) {
+            override fun handleOnBackPressed() {
+                currentOnBack()
+            }
+        }
+    }
+    // On every successful composition, update the callback with the `enabled` value
+    SideEffect {
+        backCallback.isEnabled = enabled
+    }
+    val backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current) {
+        "No OnBackPressedDispatcherOwner was provided via LocalOnBackPressedDispatcherOwner"
+    }.onBackPressedDispatcher
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, backDispatcher) {
+        // Add callback to the backDispatcher
+        backDispatcher.addCallback(lifecycleOwner, backCallback)
+        // When the effect leaves the Composition, remove the callback
+        onDispose {
+            backCallback.remove()
+        }
+    }
+}
+
+@Composable
+fun TinyChip (
+    text: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val textColor = if (color.luminance() > .5f) Color.Black else Color.White
+    Surface (
+        shape = RoundedCornerShape(12.dp),
+        color = color,
+        modifier = Modifier.clickable {onClick() }
+    ) {
+        Text (
+            text.uppercase(),
+            style = MaterialTheme.typography.body2.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(8.dp, 4.dp),
+            color = textColor.copy(alpha = .7f)
+        )
+    }
+}
+
+@Preview
+@Composable
+fun TinyChipPreview() {
+    MicCheckTheme {
+        Surface {
+            Surface (Modifier.padding(18.dp)){
+                TinyChip(text = "piano", color = MaterialTheme.colors.secondary) {
+
+                }
+            }
+        }
     }
 }
 
@@ -69,7 +145,7 @@ fun ConfirmDialog(
                     onClick = action,
                     colors = ButtonDefaults.buttonColors(
                         contentColor = MaterialTheme.colors.onBackground,
-                        backgroundColor = MaterialTheme.colors.background
+                        backgroundColor = Color.Transparent
                     )
                 ) {
                     Text(actionName)
@@ -80,12 +156,14 @@ fun ConfirmDialog(
                     onClick = onClose,
                     colors = ButtonDefaults.buttonColors(
                         contentColor = MaterialTheme.colors.onBackground,
-                        backgroundColor = MaterialTheme.colors.background
+                        backgroundColor = Color.Transparent
                     )
                 ) {
                     Text("Cancel")
                 }
-            }
+            },
+            backgroundColor = MaterialTheme.colors.background,
+            shape = RoundedCornerShape(18.dp)
         )
 }
 
@@ -93,9 +171,9 @@ fun ConfirmDialog(
 fun Chip(
     text: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     onIconClick: () -> Unit = {},
-    modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colors.background,
     contentColor: Color = MaterialTheme.colors.onBackground
 ) {
@@ -137,6 +215,7 @@ fun Chip(
 @Composable
 fun LargeButton(
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     Button(
@@ -146,7 +225,8 @@ fun LargeButton(
             contentColor = MaterialTheme.colors.onPrimary.copy(alpha = .6f)
         ),
         shape = RoundedCornerShape(40),
-        elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp)
+        elevation = ButtonDefaults.elevation(0.dp, 0.dp, 0.dp),
+        modifier = modifier
     ) {
         Box(Modifier.padding(24.dp, 12.dp)) {
             content()

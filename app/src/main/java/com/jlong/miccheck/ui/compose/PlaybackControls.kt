@@ -25,6 +25,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.jlong.miccheck.Recording
 import com.jlong.miccheck.RecordingData
+import com.jlong.miccheck.RecordingGroup
 import com.jlong.miccheck.Tag
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
@@ -33,9 +34,11 @@ fun PlaybackBackdrop(
     playbackState: Int,
     playbackProgress: Long,
     currentPlaybackRec: Recording?,
-    currentPlaybackRecData: RecordingData?,
+    currentPlaybackGroup: RecordingGroup?,
+    isGroupPlayback: Boolean,
     onPausePlayPlayback: () -> Unit,
     onSeekPlayback: (Float) -> Unit,
+    onSkipPlayback: (Long) -> Unit,
     onOpenRecordingInfo: (Recording) -> Unit,
     onAddRecordingTimestamp: (Recording, Long) -> Unit
 ) {
@@ -65,10 +68,10 @@ fun PlaybackBackdrop(
         if (currentPlaybackRec != null) {
             Row(horizontalArrangement = Arrangement.Center) {
                 Chip(
-                    text = currentPlaybackRecData?.group?.name ?: "No Group",
+                    text = currentPlaybackGroup?.name ?: "No Group",
                     onClick = { },
                     color = MaterialTheme.colors.secondary,
-                    contentColor = MaterialTheme.colors.onSurface
+                    contentColor = MaterialTheme.colors.onSecondary
                 )
                 Spacer(Modifier.width(8.dp))
                 Chip(
@@ -78,7 +81,7 @@ fun PlaybackBackdrop(
                         onAddRecordingTimestamp(currentPlaybackRec, playbackProgress)
                     },
                     color = MaterialTheme.colors.secondary,
-                    contentColor = MaterialTheme.colors.onSurface,
+                    contentColor = MaterialTheme.colors.onSecondary,
                     icon = Icons.Rounded.Add
                 )
             }
@@ -133,7 +136,9 @@ fun PlaybackBackdrop(
                     )
                 }
             },
-            recordingLength = currentPlaybackRec?.duration ?: 0
+            onSkipPlayback = onSkipPlayback,
+            recordingLength = currentPlaybackRec?.duration ?: 0,
+            isGroupPlayback = isGroupPlayback
         )
     }
 }
@@ -143,11 +148,22 @@ fun PlaybackButtons(
     playbackState: Int,
     onPausePlayPlayback: () -> Unit,
     onSeekDiff: (Int) -> Unit,
+    onSkipPlayback: (Long) -> Unit,
+    isGroupPlayback: Boolean,
     recordingLength: Int
 ) {
     Row(modifier = Modifier.animateContentSize()) {
         Row(Modifier.padding(0.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.width(8.dp))
+            if (isGroupPlayback)
+            {
+                CircleButton(onClick = { onSkipPlayback(PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS) }) {
+                    Icon(
+                        Icons.Rounded.SkipPrevious, null
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             CircleButton(onClick = {
                 onSeekDiff(
                     if (recordingLength < (1000 * 60 * 1.5))
@@ -203,6 +219,15 @@ fun PlaybackButtons(
                     "Skip 5"
                 )
             }
+            if (isGroupPlayback)
+            {
+                Spacer(Modifier.width(8.dp))
+                CircleButton(onClick = { onSkipPlayback(PlaybackStateCompat.ACTION_SKIP_TO_NEXT) }) {
+                    Icon(
+                        Icons.Rounded.SkipNext, null
+                    )
+                }
+            }
         }
     }
 }
@@ -222,20 +247,16 @@ fun PlaybackControlsPreview() {
                     name = "New Recording",
                     duration = 1,
                     size = 0,
-                    sizeStr = "0B"
+                    sizeStr = "0B",
+                    path = ""
                 ),
-                currentPlaybackRecData = RecordingData(
-                    recordingUri = Uri.EMPTY.toString(),
-                    tags = listOf(
-                        Tag("Song1"),
-                        Tag("Me"),
-                        Tag("2020")
-                    )
-                ),
+                currentPlaybackGroup = null,
                 onPausePlayPlayback = { },
                 onSeekPlayback = { },
                 onOpenRecordingInfo = { },
-                onAddRecordingTimestamp = { _, _ -> }
+                onAddRecordingTimestamp = { _, _ -> },
+                onSkipPlayback = {},
+                isGroupPlayback = true
             )
         }
     }
@@ -256,20 +277,16 @@ fun PlaybackControlsPreviewDark() {
                     name = "New Recording",
                     duration = 1,
                     size = 0,
-                    sizeStr = "0B"
+                    sizeStr = "0B",
+                    path = ""
                 ),
-                currentPlaybackRecData = RecordingData(
-                    recordingUri = Uri.EMPTY.toString(),
-                    tags = listOf(
-                        Tag("Song1"),
-                        Tag("Me"),
-                        Tag("2020")
-                    )
-                ),
+                currentPlaybackGroup = null,
                 onPausePlayPlayback = { },
                 onSeekPlayback = { },
                 onOpenRecordingInfo = { },
-                onAddRecordingTimestamp = { _, _ -> }
+                onAddRecordingTimestamp = { _, _ -> },
+                onSkipPlayback = {},
+                isGroupPlayback = true
             )
         }
     }

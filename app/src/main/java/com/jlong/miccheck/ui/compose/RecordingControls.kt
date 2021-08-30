@@ -1,21 +1,23 @@
 package com.jlong.miccheck.ui.compose
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
@@ -35,9 +37,27 @@ fun RecordingBackdrop(
     onCancel: () -> Unit,
     recordingState: RecordingState
 ) {
-    val (titleText, setTitleText) = remember { mutableStateOf("New Recording") }
+    val (titleText, setTitleText) = remember { mutableStateOf("") }
     val (descText, setDescText) = remember { mutableStateOf("") }
-    val focusManager = LocalFocusManager.current
+    var blinkVal by remember { mutableStateOf(true) }
+    val blinkAlpha by animateFloatAsState(
+        targetValue = when (blinkVal) {
+            true -> 1f
+            false -> 0f
+        },
+        finishedListener = {
+            blinkVal = if (recordingState == RecordingState.RECORDING)
+                !blinkVal
+            else
+                true
+        },
+        animationSpec = tween(1000, 250)
+    )
+
+    LaunchedEffect(key1 = recordingState) {
+        if (recordingState == RecordingState.RECORDING)
+            blinkVal = !blinkVal
+    }
 
     Column(
         Modifier
@@ -45,44 +65,47 @@ fun RecordingBackdrop(
             .animateContentSize()
             .fillMaxWidth()
     ) {
-        AnimatedVisibility(visible = (recordingState != RecordingState.WAITING)) {
+        AnimatedVisibility(visible = (recordingState != RecordingState.STOPPED)) {
             Column {
                 Row(
                     horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Surface (
+                        shape = CircleShape,
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colors.onSurface.copy(
+                            alpha = blinkAlpha
+                        )
+                    ) {}
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         elapsedRecordingTime.toTimestamp(),
                         style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold)
                     )
                 }
-                Spacer(Modifier.height(20.dp))
+               AnimatedVisibility(
+                   visible = (recordingState == RecordingState.WAITING),
+                   modifier =
+                   Modifier
+                       .align(Alignment.CenterHorizontally)
+                       .padding(top = 12.dp)
+               ) {
+                    Text(
+                        "Ready to record...",
+                        style = MaterialTheme.typography.h6.copy(fontStyle = FontStyle.Italic),
+                        color = MaterialTheme.colors.onSurface.copy(alpha = .5f),
+                    )
+                }
+                Spacer(modifier = Modifier.height(18.dp))
             }
         }
-        TextField(
-            value = titleText,
-            setTitleText,
-            modifier = Modifier.fillMaxWidth(),
-            colors =
-            TextFieldDefaults.textFieldColors(
-                backgroundColor = MaterialTheme.colors.secondary,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = MaterialTheme.colors.onSurface,
-
-                ),
-            shape = RoundedCornerShape(40),
-            textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
-            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
-        )
-        AnimatedVisibility(visible = recordingState == RecordingState.PAUSED || recordingState == RecordingState.STOPPED) {
+        AnimatedVisibility(visible = recordingState == RecordingState.STOPPED) {
             Column {
-                Spacer(Modifier.height(12.dp))
-                MetadataOptions(descText, setDescText)
+                MetadataOptions(titleText, setTitleText, descText, setDescText)
             }
         }
-        Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
             RecordingButtons(
                 recordingState = recordingState,
@@ -90,9 +113,12 @@ fun RecordingBackdrop(
                 onPausePlayRecord = onPausePlayRecord,
                 onStopRecord = onStopRecord,
                 onFinishedRecording = {
-                    onFinishedRecording(titleText, descText)
-                    setTitleText("New Recording")
-                    setDescText("")
+                    if (titleText.isNotBlank())
+                    {
+                        onFinishedRecording(titleText, descText)
+                        setTitleText("")
+                        setDescText("")
+                    }
                 },
                 onCancel = onCancel
             )
@@ -103,10 +129,32 @@ fun RecordingBackdrop(
 @ExperimentalFoundationApi
 @Composable
 fun MetadataOptions(
+    titleText: String,
+    setTitleText: (String) -> Unit,
     descText: String,
-    setDescText: (String) -> Unit
+    setDescText: (String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     Column {
+        TextField(
+            value = titleText,
+            setTitleText,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Recording Title") },
+            colors =
+            TextFieldDefaults.textFieldColors(
+                backgroundColor = MaterialTheme.colors.secondary,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = MaterialTheme.colors.onSurface,
+
+                ),
+            shape = RoundedCornerShape(32.dp),
+            textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
+            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+        )
+        Spacer(Modifier.height(12.dp))
         TextField(
             value = descText,
             setDescText,
@@ -122,9 +170,11 @@ fun MetadataOptions(
                 cursorColor = MaterialTheme.colors.onSurface
             ),
             singleLine = false,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(32.dp),
             textStyle = MaterialTheme.typography.body1,
         )
+
+        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -223,7 +273,7 @@ fun RecordingControlsPreview() {
                 onStopRecord = { /*TODO*/ },
                 onFinishedRecording = { _, _ -> },
                 onCancel = { },
-                recordingState = RecordingState.STOPPED
+                recordingState = RecordingState.RECORDING
             )
         }
     }

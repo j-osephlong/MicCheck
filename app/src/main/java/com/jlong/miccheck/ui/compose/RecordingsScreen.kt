@@ -6,31 +6,45 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Launch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
+import com.google.accompanist.pager.PagerState
 import com.google.accompanist.pager.rememberPagerState
 import com.jlong.miccheck.*
+import com.jlong.miccheck.ui.theme.MicCheckTheme
+import com.vanpra.composematerialdialogs.MaterialDialog
+import com.vanpra.composematerialdialogs.datetime.date.DatePickerDefaults
+import com.vanpra.composematerialdialogs.datetime.date.datepicker
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
-
+import kotlin.math.abs
 
 @ExperimentalPagerApi
 @ExperimentalMaterialApi
@@ -38,6 +52,7 @@ import java.util.*
 @ExperimentalAnimationApi
 @Composable
 fun RecordingsScreen(
+    pageState: PagerState,
     recordings: List<Recording>,
     recordingsData: List<RecordingData>,
     groups: List<RecordingGroup>,
@@ -45,14 +60,14 @@ fun RecordingsScreen(
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
     onOpenPlayback: () -> Unit,
+    onOpenRecord: () -> Unit,
     onOpenRecordingInfo: (Recording) -> Unit,
     onClickTag: (Tag) -> Unit,
     onSelectRecording: (Recording) -> Unit,
-    onCreateGroup: () -> Unit,
     onClearSelected: () -> Unit,
-    onOpenGroup: (RecordingGroup) -> Unit
+    onOpenGroup: (RecordingGroup) -> Unit,
+    showDatePicker: ((Long) -> Unit) -> Unit
 ) {
-    val pageState = rememberPagerState(pageCount = 2)
     val coroutine = rememberCoroutineScope()
     val setPage: (Int) -> Unit = { page ->
         coroutine.launch {
@@ -62,46 +77,87 @@ fun RecordingsScreen(
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-        HorizontalPager(
-            state = pageState,
-            modifier = Modifier.fillMaxSize(),
-            dragEnabled = true
-        ) { page ->
-            when (page) {
-                0 ->
-                    Column {
-                        ListPageHeader("Recordings", onClick = { setPage(1) }) {
-                            Text("Groups >", fontWeight = FontWeight.SemiBold)
+        if (recordings.size > 0)
+            HorizontalPager(
+                state = pageState,
+                modifier = Modifier.fillMaxSize(),
+                dragEnabled = false
+            ) { page ->
+                when (page) {
+                    0 ->
+                        Column {
+                            ListPageHeader("Recordings", onClick = { setPage(1) }) {
+                                Text("Groups >", fontWeight = FontWeight.SemiBold)
+                            }
+                            RecordingsListSection(
+                                recordings = recordings,
+                                recordingsData = recordingsData,
+                                groups = groups,
+                                selectedRecordings = selectedRecordings,
+                                currentPlaybackRec = currentPlaybackRec,
+                                onStartPlayback = onStartPlayback,
+                                onOpenPlayback = onOpenPlayback,
+                                onOpenRecordingInfo = onOpenRecordingInfo,
+                                onClickTag = onClickTag,
+                                onClickGroupTag = onOpenGroup,
+                                onSelectRecording = onSelectRecording,
+                                showDatePicker = showDatePicker,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                            )
                         }
-                        RecordingsList(
-                            recordings = recordings,
-                            recordingsData = recordingsData,
-                            selectedRecordings = selectedRecordings,
-                            currentPlaybackRec = currentPlaybackRec,
-                            onStartPlayback = onStartPlayback,
-                            onOpenPlayback = onOpenPlayback,
-                            onOpenRecordingInfo = onOpenRecordingInfo,
-                            onClickTag = onClickTag,
-                            onSelectRecording = onSelectRecording,
-                            modifier = Modifier
-                                .fillMaxSize()
-                        )
-                    }
-                1 ->
-                    Column {
-                        ListPageHeader("Groups", onClick = { setPage(0) }) {
-                            Text("< Recordings", fontWeight = FontWeight.SemiBold)
+                    1 ->
+                        Column {
+                            ListPageHeader("Groups", onClick = { setPage(0) }) {
+                                Text("< Recordings", fontWeight = FontWeight.SemiBold)
+                            }
+                            GroupsListSection(
+                                recordings = recordings,
+                                recordingsData = recordingsData,
+                                groups = groups,
+                                onClickGroup = onOpenGroup,
+                                modifier = Modifier
+                                    .fillMaxSize(),
+                            )
+                            BackHandler(true) {
+                                setPage(0)
+                            }
                         }
-                        GroupsList(
-                            recordingsData = recordingsData,
-                            groups = groups,
-                            onClickGroup = onOpenGroup,
-                            onCreateGroup = onCreateGroup,
-                            modifier = Modifier
-                                .fillMaxSize()
-                        )
-                    }
+                }
             }
+        else
+            NoRecordingsScreen {
+                onOpenRecord()
+            }
+    }
+}
+
+@Composable
+fun NoRecordingsScreen(onOpenRecord: () -> Unit) {
+    Box (Modifier.fillMaxSize()) {
+        Column (
+            Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(.75f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "You haven't recorded anything yet 🎙️",
+                style = MaterialTheme.typography.h5.copy(color = MaterialTheme.colors.onBackground.copy(alpha = .5f), fontWeight = FontWeight.SemiBold),
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Record something to see it here.",
+                style = MaterialTheme.typography.h6.copy(color = MaterialTheme.colors.onBackground.copy(alpha = .5f)),
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onOpenRecord) {
+                Text(
+                    "Record",
+                    style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold)
+                )
+            }
+
         }
     }
 }
@@ -119,8 +175,12 @@ fun ListPageHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text, style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold))
-        TextButton(onClick = onClick) {
+        Text(text, style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold))
+
+        TextButton(onClick = onClick, colors = ButtonDefaults.buttonColors(
+            backgroundColor = MaterialTheme.colors.background,
+            contentColor = MaterialTheme.colors.primary
+        )) {
             buttonText()
         }
     }
@@ -129,16 +189,19 @@ fun ListPageHeader(
 @ExperimentalFoundationApi
 @ExperimentalMaterialApi
 @Composable
-fun RecordingsList(
+fun RecordingsListSection(
     recordings: List<Recording>,
     recordingsData: List<RecordingData>,
+    groups: List<RecordingGroup>,
     selectedRecordings: List<Recording>,
     currentPlaybackRec: Recording?,
     onStartPlayback: (Recording) -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenRecordingInfo: (Recording) -> Unit,
     onClickTag: (Tag) -> Unit,
+    onClickGroupTag: (RecordingGroup) -> Unit,
     onSelectRecording: (Recording) -> Unit,
+    showDatePicker: ((Long) -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
 
@@ -148,17 +211,44 @@ fun RecordingsList(
     val recData = recordingsData.toMutableList().apply { sortByDescending { it.recordingUri } }
     recordingsGrouped = rec.zip(recData).groupBy { it.first.toDateKey() }
 
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    val datePickerCallback: (Long) -> Unit = {
+        val date = LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(it),
+                TimeZone.getDefault().toZoneId()
+            ).toLocalDate()
+        val bestMatch = recordingsGrouped.minByOrNull {
+            abs(it.value[0].first.date.toLocalDate().toEpochDay() - date.toEpochDay())
+        }
+        if (bestMatch != null) {
+            val index = recordingsGrouped.toList().indexOf(bestMatch.toPair())
+            var sum = 0
+            for (i in 0 until index)
+                sum += recordingsGrouped.toList()[i].second.size + 1
+            coroutineScope.launch {
+                listState.scrollToItem(sum)
+            }
+        }
+    }
+
     Column(modifier) {
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), listState) {
             recordingsGrouped.forEach { (_, recordings) ->
                 stickyHeader {
-                    DateHeader(recordings[0].first.date)
+                    DateHeader(
+                        recordings[0].first.date
+                    ) {
+                        showDatePicker(datePickerCallback)
+                    }
                 }
 
                 itemsIndexed(recordings, key = { _, rec -> rec.first.uri }) { index, item ->
                     Column {
                         RecordingElm(
                             item,
+                            groups.find { it.uuid == item.second.groupUUID},
                             onOpenRecordingInfo = onOpenRecordingInfo,
                             onClick = {
                                 if (selectedRecordings.isNotEmpty())
@@ -173,7 +263,9 @@ fun RecordingsList(
                             onClickTag = onClickTag,
                             isSelectable = selectedRecordings.isNotEmpty(),
                             isSelected = selectedRecordings.contains(item.first),
-                            onSelect = onSelectRecording
+                            isPlaying = (currentPlaybackRec?.uri == item.first.uri),
+                            onSelect = onSelectRecording,
+                            onClickGroupTag = onClickGroupTag
                         )
                         if (index != recordings.size - 1)
                             Divider(Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp))
@@ -185,12 +277,12 @@ fun RecordingsList(
 }
 
 @Composable
-fun DateHeader(date: LocalDateTime) {
+fun DateHeader(date: LocalDateTime, onClick: () -> Unit) {
     Surface(
         color = MaterialTheme.colors.background,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(18.dp, 0.dp, 0.dp, 8.dp)
+            .clickable { onClick() }
     ) {
         Column(
             Modifier
@@ -212,10 +304,12 @@ fun DateHeader(date: LocalDateTime) {
                                 .withLocale(Locale.getDefault())
                                 .withZone(ZoneId.systemDefault())
                         ),
-                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold)
+                style = MaterialTheme.typography.h6,
+                modifier = Modifier.padding(start = 18.dp)
             )
             Spacer(Modifier.height(8.dp))
             Divider()
+            Spacer(Modifier.height(0.dp))
         }
     }
 }
@@ -227,33 +321,32 @@ fun DateHeader(date: LocalDateTime) {
 @Preview
 @Composable
 fun RecordingScreenPreview() {
-    Surface {
-        RecordingsScreen(
-            recordings = listOf(
-                Recording(
-                    Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",
-                    date = LocalDateTime.now().plusDays(1)
+    MicCheckTheme (false) {
+        Surface {
+            RecordingElm(
+                rec = Pair(Recording(
+                        Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",
+                        date = LocalDateTime.now().plusDays(1),
+                        path = ""
+                    ),
+                    RecordingData(
+                        "",
+                        tags = listOf(
+                            Tag("Piano"), Tag("Jam"), Tag("SucksSucksSucks"), Tag("Nick Jr")
+                        )
+                    )
                 ),
-                Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0, "0B"),
-                Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0, "0B"),
-            ),
-            recordingsData = listOf(
-                RecordingData(Uri.EMPTY.toString()),
-                RecordingData(Uri.parse("file:///tmp/android.txt").toString()),
-                RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
-            ),
-            groups = listOf(),
-            selectedRecordings = listOf(),
-            currentPlaybackRec = null,
-            onStartPlayback = {},
-            onOpenPlayback = { /*TODO*/ },
-            onOpenRecordingInfo = {},
-            onClickTag = {},
-            onSelectRecording = { },
-            onCreateGroup = { },
-            onClearSelected = { },
-            onOpenGroup = {}
-        )
+                group = null,
+                onOpenRecordingInfo = {},
+                onClick = { /*TODO*/ },
+                onClickTag = {},
+                onClickGroupTag = {},
+                isSelectable = false,
+                isSelected = false,
+                isPlaying = false,
+                onSelect = {}
+            )
+        }
     }
 }
 
@@ -262,17 +355,20 @@ fun RecordingScreenPreview() {
 @Composable
 fun RecordingElm(
     rec: Pair<Recording, RecordingData>,
+    group: RecordingGroup?,
     onOpenRecordingInfo: (Recording) -> Unit,
     onClick: () -> Unit,
     onClickTag: (Tag) -> Unit,
+    onClickGroupTag: (RecordingGroup) -> Unit,
     isSelectable: Boolean,
     isSelected: Boolean,
+    isPlaying: Boolean,
     onSelect: (Recording) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accentColor: Color = MaterialTheme.colors.primary
 ) {
     Card(
         elevation = 0.dp,
-//        onClick = onClick,
         modifier = modifier.combinedClickable(
             onClick = onClick,
             onLongClick = {
@@ -286,7 +382,7 @@ fun RecordingElm(
             Modifier
                 .fillMaxWidth()
                 .animateContentSize()
-                .padding(18.dp, 18.dp, 0.dp, 18.dp)
+                .padding(18.dp, 24.dp, 0.dp, 24.dp)
         ) {
 
             Row(
@@ -294,10 +390,40 @@ fun RecordingElm(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.weight(1f)) {
+                    LazyRow {
+                        if (group != null)
+                            item {
+                                Row {
+                                    TinyChip(text = group.name, color = Color(group.fallbackColor)) {
+                                        onClickGroupTag(group)
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                            }
+                        itemsIndexed(rec.second.tags) { index, item ->
+                            if (index < 4) {
+                                Row {
+                                    TinyChip(
+                                        text = item.name,
+                                        color = accentColor,
+                                        onClick = { onClickTag(item) }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                            }
+                        }
+                    }
+                    if (rec.second.tags.isNotEmpty() || group != null)
+                        Spacer(Modifier.height(8.dp))
                     Row {
                         Text(
                             rec.first.name,
-                            style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold),
+                            style =
+                                MaterialTheme.typography.h6.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isPlaying) accentColor
+                                            else MaterialTheme.colors.onBackground
+                                ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -341,26 +467,30 @@ fun RecordingElm(
                                 end = 12.dp,
                                 start = 12.dp
                             ),
-                            colors = CheckboxDefaults.colors(checkmarkColor = MaterialTheme.colors.background)
+                            colors = CheckboxDefaults.colors(
+                                checkmarkColor = if (!isSystemInDarkTheme())
+                                {
+                                    if (accentColor.luminance() > .65f)
+                                        Color(ColorUtils.blendARGB(
+                                            accentColor.toArgb(),
+                                            Color.Black.toArgb(),
+                                            .8f
+                                        ) )
+                                    else
+                                        Color(ColorUtils.blendARGB(
+                                            accentColor.toArgb(),
+                                            Color.White.toArgb(),
+                                            .8f
+                                        ))
+                                } else MaterialTheme.colors.background,
+                                checkedColor = accentColor
+                            )
                         )
                 }
             }
 
-            if (rec.second.tags.isNotEmpty())
-                Spacer(Modifier.height(8.dp))
-            LazyRow {
-                itemsIndexed(rec.second.tags) { index, item ->
-                    if (index < 4) {
-                        Row {
-                            Chip(
-                                text = item.name,
-                                onClick = { onClickTag(item) }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                    }
-                }
-            }
+
+
         }
     }
 }

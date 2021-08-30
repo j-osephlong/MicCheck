@@ -47,7 +47,8 @@ fun SearchScreen(
     onOpenPlayback: () -> Unit,
     onOpenSelectTag: () -> Unit,
     onRemoveTagFilter: () -> Unit,
-    onOpenTimeStamp: (Recording, TimeStamp) -> Unit
+    onOpenTimeStamp: (Recording, TimeStamp) -> Unit,
+    onOpenGroup: (RecordingGroup) -> Unit
 ) {
     val (text, setText) = remember {
         mutableStateOf("")
@@ -69,7 +70,7 @@ fun SearchScreen(
                 Spacer(Modifier.width(18.dp))
                 Text(
                     "Search",
-                    style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+                    style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
                 )
             }
@@ -109,9 +110,7 @@ fun SearchScreen(
                 Spacer(Modifier.width(18.dp))
                 Chip(
                     tagFilter?.name ?: "Filter by tag",
-                    if (tagFilter == null) onOpenSelectTag else {
-                        {}
-                    },
+                    if (tagFilter == null) onOpenSelectTag else onRemoveTagFilter,
                     icon = if (tagFilter == null) Icons.Rounded.Add else Icons.Rounded.Close,
                     onIconClick = {
                         if (tagFilter != null) {
@@ -136,6 +135,7 @@ fun SearchScreen(
                             text,
                             recordings = recordings,
                             recordingsData = recordingsData,
+                            groups = groups,
                             tagFilter = tagFilter
                         )
             }
@@ -143,12 +143,14 @@ fun SearchScreen(
             ResultsList(
                 results = results,
                 recordingsData = recordingsData,
+                groups = groups,
                 onOpenRecordingInfo = onOpenRecordingInfo,
                 onStartPlayback = onStartPlayback,
                 onOpenPlayback = onOpenPlayback,
                 onOpenTimeStamp = { uri, timeStamp ->
                     onOpenTimeStamp(recordings.find { it.uri == uri }!!, timeStamp)
-                }
+                },
+                onOpenGroup = onOpenGroup
             )
         }
     }
@@ -158,6 +160,7 @@ fun searchAlgorithm(
     query: String,
     recordings: List<Recording>,
     recordingsData: List<RecordingData>,
+    groups: List<RecordingGroup>,
     tagFilter: Tag?
 ): List<Searchable> {
 
@@ -171,14 +174,17 @@ fun searchAlgorithm(
 
     val timestampsList = filteredList.let { list ->
         val newList: MutableList<TimeStamp> = mutableListOf()
-        list.forEach { rec ->
-            newList +=
-                recordingsData.find { it.recordingUri == rec.uri.toString() }!!.timeStamps
-        }
+        if (recordingsData.isNotEmpty())
+            list.forEach { rec ->
+                newList +=
+                    recordingsData.find { it.recordingUri == rec.uri.toString() }!!.timeStamps
+            }
         newList
     }
 
-    val combinedList: MutableList<Searchable> = (filteredList + timestampsList).toMutableList()
+    val groupsList = if (tagFilter == null) groups else listOf()
+
+    val combinedList: MutableList<Searchable> = (filteredList + timestampsList + groupsList).toMutableList()
 
     val transformedResults = FuzzySearch.extractAll(
         query, combinedList, { item -> item.name }, 35
@@ -195,37 +201,48 @@ fun searchAlgorithm(
 @Composable
 fun ResultsList(
     results: List<Searchable>,
+    groups: List<RecordingGroup>,
     recordingsData: List<RecordingData>,
     onOpenRecordingInfo: (Recording) -> Unit,
     onStartPlayback: (Recording) -> Unit,
     onOpenPlayback: () -> Unit,
-    onOpenTimeStamp: (Uri, TimeStamp) -> Unit
+    onOpenTimeStamp: (Uri, TimeStamp) -> Unit,
+    onOpenGroup: (RecordingGroup) -> Unit
 ) {
     val listState = rememberLazyListState()
     LazyColumn(state = listState) {
         itemsIndexed(results) { index, item ->
             Column {
-                if (item is Recording)
+                if (item is Recording) {
+                    val pair = Pair(
+                        item,
+                        recordingsData.find { it.recordingUri == item.uri.toString() }!!
+                    )
                     RecordingElm(
-                        Pair(
-                            item,
-                            recordingsData.find { it.recordingUri == item.uri.toString() }!!
-                        ),
+                        pair,
+                        group = groups.find { it.uuid == pair.second.groupUUID },
                         onOpenRecordingInfo = onOpenRecordingInfo,
                         onClick = {
                             onStartPlayback(item)
                             onOpenPlayback()
                         },
                         onClickTag = {},
+                        onClickGroupTag = onOpenGroup,
                         isSelectable = false,
                         isSelected = false,
-                        onSelect = { }
+                        onSelect = { },
+                        isPlaying = false
                     )
+                }
                 if (item is TimeStamp) {
                     TimestampSearchElm(
                         timeStamp = item,
                         { onOpenTimeStamp(Uri.parse(item.recordingUri), item) })
                 }
+                if (item is RecordingGroup)
+                    GroupSearchElm(group = item) {
+                        onOpenGroup(item)
+                    }
                 if (index != results.size - 1)
                     Divider(Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp))
             }
@@ -293,5 +310,37 @@ private fun TimestampSearchElm(
             }
         }
         Spacer(Modifier.height(18.dp))
+    }
+}
+
+@Composable
+fun GroupSearchElm (
+    group: RecordingGroup,
+    onClick: () -> Unit
+) {
+    Row (
+        Modifier
+            .padding(18.dp)
+            .clickable { onClick() }
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                group.name,
+                style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text("Group of recordings")
+        }
+        Surface(
+            Modifier.size(42.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color(group.fallbackColor)
+        ) {
+
+        }
     }
 }

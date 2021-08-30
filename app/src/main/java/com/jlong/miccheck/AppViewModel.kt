@@ -26,8 +26,10 @@ import java.time.ZoneId
 import java.util.*
 
 class AppViewModel : ViewModel() {
+    var settings by mutableStateOf(UserAndSettings())
     var currentPlaybackRec by mutableStateOf<Recording?>(null)
         private set
+    var isGroupPlayback by mutableStateOf(false)
     var currentPlaybackState by mutableStateOf(PlaybackStateCompat.STATE_NONE)
     var playbackProgress by mutableStateOf(0L)
 
@@ -37,7 +39,7 @@ class AppViewModel : ViewModel() {
     var selectedBackdrop by mutableStateOf(0)
         private set
 
-    var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0, "0B"))
+    var recordings = mutableStateListOf(Recording(Uri.EMPTY, "PLACEHOLDER", 0, 0, "0B", path = ""))
     var recordingsData = mutableStateListOf<RecordingData>()
     var selectedRecordings = mutableStateListOf<Recording>()
     var tags = mutableStateListOf<Tag>()
@@ -48,21 +50,14 @@ class AppViewModel : ViewModel() {
 
     var recordTime by mutableStateOf(0L)
 
-    fun onCreateGroup(name: String, imgUri: Uri?) {
+    fun onCreateGroup(name: String, imgUri: Uri?, color: Color) {
         var uuid = UUID.randomUUID()
         while (groups.map { it.uuid }.contains(uuid.toString()))
             uuid = UUID.randomUUID()
         val newGroup = RecordingGroup(
             name = name,
             imgUri = imgUri.toString(),
-            fallbackColor = listOf(
-                Color.White,
-                Color.Magenta,
-                Color.Yellow,
-                Color.Cyan,
-                Color.Red,
-                Color.Blue
-            ).random().toArgb(),
+            fallbackColor = color.toArgb(),
             uuid = uuid.toString()
         )
 
@@ -77,13 +72,82 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun addRecordingsToGroup(group: RecordingGroup, recording: Recording?) {
+    fun onDeleteGroup(group: RecordingGroup) {
+        groups.remove(group)
+
+        val recordings = recordingsData.filter { it.groupUUID == group.uuid}
+        recordings.forEach {
+            it.groupOrderNumber = -1
+            it.groupUUID = null
+        }
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
+    }
+
+    fun onEditGroup(group: RecordingGroup, name: String? = null, imgUri: String? = null, color: Int? = null) {
+        val groupRef = groups.find { it.uuid == group.uuid }!!
+        val groupIndex = groups.indexOf(groupRef)
+
+        groupRef.name = name ?: group.name
+        groupRef.imgUri = imgUri ?: group.imgUri
+        groupRef.fallbackColor = color ?: group.fallbackColor
+
+        groups[groupIndex] = groupRef
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
+    }
+
+    fun onRemoveRecordingFromGroup(group: RecordingGroup, recording: Recording) {
+        val recData = recordingsData.find {it.recordingUri == recording.uri.toString()}!!
+        val recDataIndex = recordingsData.indexOf(recData)
+
+        recData.groupOrderNumber = -1
+        recData.groupUUID = null
+
+        recordingsData[recDataIndex] = recData
+
+        orderGroup(group)
+
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                serializeAndSave()
+            }
+        }
+    }
+
+    fun onAddRecordingsToGroup(group: RecordingGroup, recording: Recording?) {
         fun addOne() {
             val recDataRef = recordingsData.find { it.recordingUri == recording!!.uri.toString() }!!
             val recDataIndex = recordingsData.indexOf(recDataRef)
 
-            recDataRef.group = group
+            if (recDataRef.groupUUID == group.uuid)
+                return
+
+            val orderNum = recordingsData.filter { it.groupUUID == group.uuid }
+                .let {
+                    if (it.isEmpty()) 0
+                    else it.maxOf { it.groupOrderNumber }+1
+                }
+
+            recDataRef.groupUUID = group.uuid
+            recDataRef.groupOrderNumber = orderNum
             recordingsData[recDataIndex] = recDataRef
+
+            orderGroup(group)
+
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) {
+                    serializeAndSave()
+                }
+            }
         }
 
         if (recording != null) {
@@ -98,7 +162,14 @@ class AppViewModel : ViewModel() {
             val recDataRef = recordingsData.find { it.recordingUri == rec.uri.toString() }!!
             val recDataIndex = recordingsData.indexOf(recDataRef)
 
-            recDataRef.group = group
+            val orderNum = recordingsData.filter { it.groupUUID == group.uuid }
+                .let {
+                    if (it.isEmpty()) 0
+                    else it.maxOf { it.groupOrderNumber }+1
+                }
+            recDataRef.groupOrderNumber = orderNum
+            recDataRef.groupUUID = group.uuid
+
             recordingsData[recDataIndex] = recDataRef
         }
 
@@ -109,7 +180,24 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun setBackdrop(backdrop: Int) {
+    fun orderGroup (group: RecordingGroup) {
+        var i = 0
+        val recs = recordingsData.filter { it.groupUUID == group.uuid }
+        val ordered = mutableListOf<RecordingData>()
+        if (recs.isEmpty())
+            return
+
+        var list = recs
+        while (list.isNotEmpty())
+        {
+            val min = list.minByOrNull { it.groupOrderNumber } ?: break
+            recordingsData[recordingsData.indexOf(min)].groupOrderNumber = i++
+            ordered += min
+            list = recs.filter { rec -> ordered.find {it.recordingUri == rec.recordingUri} == null}
+        }
+    }
+
+    fun onSetBackdrop(backdrop: Int) {
         if (backdrop > 1)
             throw IllegalArgumentException("Invalid backdrop index.")
         selectedBackdrop = backdrop
@@ -146,7 +234,7 @@ class AppViewModel : ViewModel() {
             } catch (securityException: RecoverableSecurityException) {
                 val intentSender =
                     securityException.userAction.actionIntent.intentSender
-                intentSender?.let {
+                intentSender.let {
                     requestFilePermission(it)
                 }
             }
@@ -176,6 +264,7 @@ class AppViewModel : ViewModel() {
                 ).forEach { recording ->
                 val recordingData =
                     recordingsData.find { it.recordingUri == recording.uri.toString() }
+                val group = groups.find { it.uuid == recordingData?.groupUUID }
                 try {
                     context.contentResolver.delete(
                         recording.uri, null, null
@@ -183,13 +272,13 @@ class AppViewModel : ViewModel() {
                 } catch (securityException: RecoverableSecurityException) {
                     val intentSender =
                         securityException.userAction.actionIntent.intentSender
-                    intentSender?.let {
-                        requestFilePermission(it)
-                }
+                    requestFilePermission(intentSender)
             }
 
             recordings.remove(recording)
             recordingsData.remove(recordingData)
+            if (group != null)
+                orderGroup(group)
         }
 
         viewModelScope.launch {
@@ -204,6 +293,7 @@ class AppViewModel : ViewModel() {
         title: String,
         description: String = ""
     ) {
+        recordTime = 0L
         //create recording data
         if (currentRecordingUri == null)
             return
@@ -234,7 +324,7 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun addTagToRecording(recording: Recording?, tag: Tag) {
+    fun onAddTagToRecording(recording: Recording?, tag: Tag) {
         fun tagOne() {
             val recData = recordingsData.find {
                 Uri.parse(it.recordingUri) == recording!!.uri
@@ -248,6 +338,12 @@ class AppViewModel : ViewModel() {
 
             recData.tags += tag
             recordingsData[index] = recData
+
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) {
+                    serializeAndSave()
+                }
+            }
         }
 
         if (recording != null) {
@@ -280,16 +376,20 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun deleteTag(recording: Recording, tag: Tag) {
+    fun onDeleteTag(recording: Recording, tag: Tag) {
+        Log.i("DeleteTag", "Attempting to delete ${tag.name} from ${recording.name}")
+
         val recData = recordingsData.find {
             Uri.parse(it.recordingUri) == recording.uri
         }!!
         val index = recordingsData.indexOf(recData)
 
-        if (recData.tags.find { tag.name == it.name } == null)
+        if (recData.tags.find { tag.name == it.name } == null){
+            Log.e("DeleteTag", "No such tag \"${tag.name}\" found on $recording.name}")
             return
+        }
 
-        recData.tags.minus(tag)
+        recData.tags -= tag
         recordingsData[index] = recData
 
         viewModelScope.launch {
@@ -299,7 +399,7 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun addTimestampToRecording(
+    fun onAddTimestampToRecording(
         recording: Recording,
         timeMilli: Long,
         title: String,
@@ -329,16 +429,18 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun deleteTimestamp(recording: Recording, timeStamp: TimeStamp) {
+    fun onDeleteTimestamp(recording: Recording, timeStamp: TimeStamp) {
         val recData = recordingsData.find {
             Uri.parse(it.recordingUri) == recording.uri
         }!!
         val index = recordingsData.indexOf(recData)
 
-        if (recData.timeStamps.find { timeStamp.timeMilli == it.timeMilli } == null)
+        if (recData.timeStamps.find { timeStamp.timeMilli == it.timeMilli } == null){
+            Log.e("DeleteTimestamp", "No such stamp \"${timeStamp.name}\" found on ${recording.name}")
             return
+        }
 
-        recData.timeStamps.minus(timeStamp)
+        recData.timeStamps -= timeStamp
         recordingsData[index] = recData
 
         viewModelScope.launch {
@@ -365,7 +467,8 @@ class AppViewModel : ViewModel() {
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DATE_MODIFIED
+            MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.DATA
         )
         val selection = MediaStore.Audio.Media.RELATIVE_PATH + " like ?"
         val selectionArgs = arrayOf("%micCheck%")
@@ -392,6 +495,7 @@ class AppViewModel : ViewModel() {
                 cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+            val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
 
             while (cursor.moveToNext()) {
                 // Get values of columns for a given Audio.
@@ -401,6 +505,7 @@ class AppViewModel : ViewModel() {
                 val size = cursor.getInt(sizeColumn)
                 val date = cursor.getInt(dateColumn) * 1000L
                 val dName = cursor.getString(displayColumn)
+                val path = cursor.getString(pathColumn)
 
                 val contentUri: Uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -418,7 +523,8 @@ class AppViewModel : ViewModel() {
                         size,
                         Formatter.formatShortFileSize(context, size.toLong()).toString(),
                         date = Instant.ofEpochMilli(date).atZone(ZoneId.systemDefault())
-                            .toLocalDateTime()
+                            .toLocalDateTime(),
+                        path
                     )
                 )
 

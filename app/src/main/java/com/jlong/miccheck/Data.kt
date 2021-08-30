@@ -1,15 +1,12 @@
 package com.jlong.miccheck
 
 import android.net.Uri
+import android.os.Bundle
+import android.support.v4.media.MediaMetadataCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.serialization.Serializable
 import java.time.LocalDateTime
-
-const val recordingDataVersion = 1
-const val recordingGroupVersion = 2
-const val tagVersion = 1
-const val timeStampVersion = 1
 
 interface Searchable {
     val name: String
@@ -32,6 +29,7 @@ data class Recording(
     val size: Int,
     val sizeStr: String,
     val date: LocalDateTime = LocalDateTime.now(),
+    val path: String
 ) : Searchable
 
 @Serializable
@@ -44,24 +42,47 @@ sealed class VersionedRecordingData {
         var group: RecordingGroup? = null,
         var timeStamps: List<TimeStamp> = listOf()
     ) : VersionedRecordingData()
+
+    /**
+     * V2 - Group order value
+     */
+    @Serializable
+    data class V2(
+        var recordingUri: String,
+        var tags: List<Tag> = listOf(),
+        var description: String = "",
+        var groupUUID: String? = null,
+        var groupOrderNumber: Int = -1,
+        var timeStamps: List<TimeStamp> = listOf()
+    ): VersionedRecordingData()
 }
 
 fun VersionedRecordingData.toLatestVersion(): RecordingData = when (this) {
-    is VersionedRecordingData.V1 -> this
+    is VersionedRecordingData.V1 -> this.let {
+        RecordingData(
+            recordingUri = it.recordingUri,
+            tags = it.tags.let { oldTags ->
+                val newTags = mutableListOf<Tag>()
+                oldTags.forEach { tag -> newTags+=tag.toLatestVersion() }
+                newTags
+            },
+            description = it.description,
+            groupUUID = it.group?.uuid,
+            groupOrderNumber = 0,
+            timeStamps = it.timeStamps.let { oldStamps ->
+                val newStamps = mutableListOf<TimeStamp>()
+                oldStamps.forEach { stamp -> newStamps+=stamp.toLatestVersion() }
+                newStamps
+            }
+        )
+    }
+    is VersionedRecordingData.V2 -> this
 }
 
-typealias RecordingData = VersionedRecordingData.V1
+typealias RecordingData = VersionedRecordingData.V2
 
 @Serializable
 sealed class VersionedRecordingGroup {
-    @Serializable
-    data class V1(
-        val name: String,
-        var imgUri: String? = null,
-        var fallbackColor: Int = Color.White.toArgb(),
-        val uuid: String,
-    ) : VersionedRecordingGroup()
-
     @Serializable
     data class V2(
         val name: String,
@@ -69,21 +90,32 @@ sealed class VersionedRecordingGroup {
         var fallbackColor: Int = Color.White.toArgb(),
         val uuid: String,
     ) : VersionedRecordingGroup()
+
+    /**
+     * V3 - Name is now mutable
+     *    - Searchable
+     */
+    @Serializable
+    data class V3(
+        override var name: String,
+        var imgUri: String? = null,
+        var fallbackColor: Int = Color.White.toArgb(),
+        val uuid: String,
+    ) : VersionedRecordingGroup(), Searchable
 }
 
 fun VersionedRecordingGroup.toLatestVersion(): RecordingGroup = when (this) {
-    is VersionedRecordingGroup.V2 -> this
-    is VersionedRecordingGroup.V1 -> this.let {
+    is VersionedRecordingGroup.V2 ->
         RecordingGroup(
-            it.name,
-            it.imgUri,
-            it.fallbackColor,
-            it.uuid
+            this.name,
+            this.imgUri,
+            this.fallbackColor,
+            this.uuid
         )
-    }
+    is VersionedRecordingGroup.V3 -> this
 }
 
-typealias RecordingGroup = VersionedRecordingGroup.V2
+typealias RecordingGroup = VersionedRecordingGroup.V3
 
 @Serializable
 sealed class VersionedTag {
@@ -122,4 +154,48 @@ data class PackagedData(
     val groups: List<VersionedRecordingGroup>,
     val tags: List<VersionedTag>,
     val recordingsData: List<VersionedRecordingData>
+)
+
+@Serializable
+data class UserAndSettings (
+    val firstLaunch: Boolean = true,
+    val firstGroups: Boolean = true,
+    val sampleRate: Int = 48000,
+    val encodingBitRate: Int = 384000
+)
+
+fun Pair<Recording, RecordingGroup?>.toMetaData(): Bundle =
+    Bundle().apply {
+        putString(MediaMetadataCompat.METADATA_KEY_TITLE, this@toMetaData.first.name)
+        putString(
+            MediaMetadataCompat.METADATA_KEY_ALBUM,
+            this@toMetaData.second?.name ?: "No Group"
+        )
+        putString(
+            MediaMetadataCompat.METADATA_KEY_ARTIST,
+            "Me" /*TODO*/
+        )
+        putLong(
+            MediaMetadataCompat.METADATA_KEY_DURATION,
+            this@toMetaData.first.duration.toLong()
+        )
+        if (this@toMetaData.second?.imgUri != null)
+            putString(
+                MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI,
+                this@toMetaData.second!!.imgUri.toString()
+            )
+        if (this@toMetaData.second != null)
+            putInt(
+                "CUSTOM_KEY_COLOR",
+                this@toMetaData.second!!.fallbackColor
+            )
+    }
+
+val groupColors = listOf(
+    Color(0xfffbe9e7),
+    Color(0xffd4ffe7),
+    Color(0xffffabb5),
+    Color(0xfffffad4),
+    Color(0xffd4ddff),
+    Color(0xffdcffd4)
 )

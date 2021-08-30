@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.*
 import android.content.pm.PackageManager
+import android.media.MediaMetadata.METADATA_KEY_MEDIA_URI
 import android.net.Uri
 import android.os.*
 import android.support.v4.media.MediaBrowserCompat
@@ -23,10 +24,9 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.Surface
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.toMutableStateList
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.arthenica.mobileffmpeg.FFmpeg
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.jlong.miccheck.ui.compose.AppUI
 import com.jlong.miccheck.ui.compose.StatusBarColor
@@ -39,6 +39,17 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.util.*
+import android.os.StrictMode
+import android.os.StrictMode.VmPolicy
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.compose.runtime.*
+import androidx.core.net.toFile
+import androidx.lifecycle.ViewModel
+import com.google.android.material.datepicker.MaterialDatePicker
+import java.time.LocalDate
+
+//import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : AppCompatActivity() {
     private val mainActivityVM by viewModels<AppViewModel>()
@@ -56,6 +67,11 @@ class MainActivity : AppCompatActivity() {
     @ExperimentalMaterialApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+//        installSplashScreen()
+
+        val builder = VmPolicy.Builder()
+        StrictMode.setVmPolicy(builder.build())
 
         /**
          * #1
@@ -88,6 +104,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**
+         * #5
+         * Recall and validate user data
+         */
+        mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
+        mainActivityVM.requestFilePermission = this@MainActivity::requestFilePermission
+        loadData()
+        CoroutineScope(Dispatchers.IO).launch {
+            mainActivityVM.loadRecordings(applicationContext)
+            verifyData()
+        }
+        loadSettings()
+
+        /**
          * #2
          * Setup notification channels
          */
@@ -115,18 +144,6 @@ class MainActivity : AppCompatActivity() {
         startService(lIntent)
 
         /**
-         * #5
-         * Recall and validate user data
-         */
-        mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
-        mainActivityVM.requestFilePermission = this@MainActivity::requestFilePermission
-        loadData()
-        CoroutineScope(Dispatchers.IO).launch {
-            mainActivityVM.loadRecordings(applicationContext)
-            verifyData()
-        }
-
-        /**
          * #6
          * Setup image chooser &
          * Create compose UI with callbacks
@@ -134,138 +151,11 @@ class MainActivity : AppCompatActivity() {
         imageResultLauncher = setupImageChooser()
 
         setContent {
-            val coroutineScope = rememberCoroutineScope()
-
-            MicCheckTheme {
-                StatusBarColor()
-                // A surface container using the 'background' color from the theme
-                Surface {
-                    AppUI(
-                        recordings = mainActivityVM.recordings,
-                        recordingsData = mainActivityVM.recordingsData,
-                        tags = mainActivityVM.tags,
-                        groups = mainActivityVM.groups,
-                        recordingState = mainActivityVM.recordingState,
-                        currentPlaybackRec = mainActivityVM.currentPlaybackRec,
-                        playbackState = mainActivityVM.currentPlaybackState,
-                        playbackProgress = mainActivityVM.playbackProgress,
-                        elapsedRecordingTime = mainActivityVM.recordTime,
-                        onStartRecord = { recorderClient.onStartRecord() },
-                        onPausePlayRecord = { recorderClient.onPausePlayRecord() },
-                        onStopRecord = {
-                            coroutineScope.launch {
-                                recorderClient.onStopRecord()
-                            }
-                        },
-                        onFinishedRecording = { title, desc ->
-                            mainActivityVM.onRecordingFinished(applicationContext, title, desc)
-                        },
-                        onCreateGroup = mainActivityVM::onCreateGroup,
-                        onStartPlayback = {
-                            val currRecData = it.let {
-                                mainActivityVM.recordingsData.find { rec ->
-                                    rec.recordingUri == it.uri.toString()
-                                }
-                            }
-
-                            mainActivityVM.setCurrentPlayback(it)
-                            mediaController.transportControls.playFromUri(
-                                it.uri,
-                                Bundle().apply {
-                                    putString(MediaMetadataCompat.METADATA_KEY_TITLE, it.name)
-                                    putString(
-                                        MediaMetadataCompat.METADATA_KEY_ALBUM,
-                                        currRecData?.group?.name ?: "No Group"
-                                    )
-                                    putString(
-                                        MediaMetadataCompat.METADATA_KEY_ARTIST,
-                                        "Me" /*TODO*/
-                                    )
-                                    putLong(
-                                        MediaMetadataCompat.METADATA_KEY_DURATION,
-                                        it.duration.toLong()
-                                    )
-                                })
-                            mainActivityVM.setBackdrop(1)
-                        },
-                        onPausePlayPlayback = {
-
-                            val currRec = mainActivityVM.currentPlaybackRec
-                            val currRecData = currRec.let {
-                                if (it == null)
-                                    null
-                                else {
-                                    mainActivityVM.recordingsData.find { rec ->
-                                        rec.recordingUri == it.uri.toString()
-                                    }
-                                }
-                            }
-
-                            if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PLAYING)
-                                mediaController.transportControls.pause()
-                            else if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PAUSED ||
-                                mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_STOPPED
-                            )
-                                mediaController.transportControls.playFromUri(mainActivityVM.currentPlaybackRec!!.uri,
-                                    Bundle().apply {
-                                        putString(
-                                            MediaMetadataCompat.METADATA_KEY_TITLE,
-                                            mainActivityVM.currentPlaybackRec!!.name
-                                        )
-                                        putString(
-                                            MediaMetadataCompat.METADATA_KEY_ALBUM,
-                                            currRecData?.group?.name ?: "No Group"
-                                        )
-                                        putString(
-                                            MediaMetadataCompat.METADATA_KEY_ARTIST,
-                                            "Me" /*TODO*/
-                                        )
-                                        putLong(
-                                            MediaMetadataCompat.METADATA_KEY_DURATION,
-                                            mainActivityVM.currentPlaybackRec!!.duration.toLong()
-                                        )
-                                    }
-                                )
-                        },
-                        onSeekPlayback = {
-                            mediaController.transportControls.seekTo(
-                                (it * (mainActivityVM.currentPlaybackRec?.duration ?: 0)).toLong()
-                            )
-                        },
-                        onAddRecordingTag = mainActivityVM::addTagToRecording,
-                        onDeleteTag = mainActivityVM::deleteTag,
-                        onAddRecordingTimestamp = mainActivityVM::addTimestampToRecording,
-                        onDeleteTimestamp = mainActivityVM::deleteTimestamp,
-                        onShareRecordings = this::onShare,
-                        onEditFinished = { rec, title, desc ->
-                            mainActivityVM.onEditRecordingDataFinished(
-                                applicationContext,
-                                rec,
-                                title,
-                                desc
-                            )
-                        },
-                        onDeleteRecordings = {
-                            mainActivityVM.onDeleteRecordings(
-                                applicationContext,
-                                it
-                            )
-                        },
-                        onSelectBackdrop = mainActivityVM::setBackdrop,
-                        selectedBackdrop = mainActivityVM.selectedBackdrop,
-                        selectedRecordings = mainActivityVM.selectedRecordings,
-                        onSelectRecording = mainActivityVM::onSelectRecording,
-                        onClearSelected = {
-                            mainActivityVM.selectedRecordings.removeAll(mainActivityVM.selectedRecordings)
-                        },
-                        onChooseImage = this::onChooseImage,
-                        onAddRecordingsToGroup = mainActivityVM::addRecordingsToGroup
-                    )
-                }
-            }
+            App()
         }
     }
 
+    //region Activity Lifecycle
     override fun onStart() {
         super.onStart()
         // connect the controllers again to the session
@@ -298,6 +188,7 @@ class MainActivity : AppCompatActivity() {
         controllerCompat?.unregisterCallback(mControllerCallback)
         mMediaBrowserCompat.disconnect()
     }
+    //endregion
 
     private fun requestFilePermission(intentSender: IntentSender) {
         ActivityCompat.startIntentSenderForResult(
@@ -312,6 +203,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    //region Serialization functions
     private suspend fun serializeAndSaveData() {
         val packagedData = Json.encodeToString(
             PackagedData.serializer(), PackagedData(
@@ -320,10 +212,32 @@ class MainActivity : AppCompatActivity() {
                 groups = mainActivityVM.groups.toList() as List<VersionedRecordingGroup>
             )
         )
+        val settings = Json.encodeToString(
+            UserAndSettings.serializer(), mainActivityVM.settings
+        )
 
         val dataFile = File(applicationContext.filesDir, "MicCheckAppData.json")
         if (!dataFile.exists()) dataFile.createNewFile()
         dataFile.writeText(packagedData)
+
+        val settingsFile = File(applicationContext.filesDir, "MicCheckSettings.json")
+        if (!settingsFile.exists()) settingsFile.createNewFile()
+        settingsFile.writeText(settings)
+    }
+
+    private fun loadSettings() {
+        val settingsFile = File(applicationContext.filesDir, "MicCheckSettings.json")
+        if (!settingsFile.exists())
+            return
+        val rawData = settingsFile.readText()
+        val settingsData: UserAndSettings =
+            try {
+                Json.decodeFromString(UserAndSettings.serializer(), rawData)
+            } catch (e: SerializationException) {
+                Toast.makeText(applicationContext, "Unable to read settings data.", Toast.LENGTH_LONG).show()
+                return
+            }
+        mainActivityVM.settings = settingsData
     }
 
     private fun loadData() {
@@ -335,19 +249,13 @@ class MainActivity : AppCompatActivity() {
             try {
                 Json.decodeFromString(PackagedData.serializer(), packagedData)
             } catch (e: SerializationException) {
+                Toast.makeText(applicationContext, "Unable to read recording data.", Toast.LENGTH_LONG).show()
                 PackagedData(
                     listOf(),
                     listOf(),
                     listOf()
                 )
             }
-        val currentVersionGroups = unpackedData.groups.let { groups ->
-            val list = mutableListOf<RecordingGroup>()
-            groups.forEach {
-                list.add(it.toLatestVersion())
-            }
-            list
-        }
         val currentVersionTags = unpackedData.tags.let { tags ->
             val list = mutableListOf<Tag>()
             tags.forEach {
@@ -362,10 +270,26 @@ class MainActivity : AppCompatActivity() {
             }
             list
         }
-
-        mainActivityVM.groups = currentVersionGroups.toMutableStateList()
+        val currentVersionGroups = unpackedData.groups.let { groups ->
+            val list = mutableListOf<RecordingGroup>()
+            groups.forEach {
+                list.add(it.toLatestVersion())
+                if (it is VersionedRecordingGroup.V2)
+                {
+                    val groupRecs = currentVersionRecordingData.filter { recData ->
+                        recData.groupUUID == it.uuid
+                    }
+                    groupRecs.forEach { recData ->
+                        if (recData.groupOrderNumber == -1)
+                            recData.groupOrderNumber = groupRecs.maxOf { i -> i.groupOrderNumber } + 1
+                    }
+                }
+            }
+            list
+        }
         mainActivityVM.tags = currentVersionTags.toMutableStateList()
         mainActivityVM.recordingsData = currentVersionRecordingData.toMutableStateList()
+        mainActivityVM.groups = currentVersionGroups.toMutableStateList()
     }
 
     private suspend fun verifyData() {
@@ -381,8 +305,37 @@ class MainActivity : AppCompatActivity() {
             } == null
         }
 
+        mainActivityVM.groups.removeIf { group ->
+            mainActivityVM.recordingsData.find { it.groupUUID == group.uuid} == null
+        }
+
+        mainActivityVM.groups.forEach {
+            mainActivityVM.orderGroup(it)
+            it.imgUri?.let { uri ->
+                val file = File(applicationContext.filesDir, Uri.parse(uri).lastPathSegment ?: return@let)
+                if (!file.exists())
+                {
+                    val index = mainActivityVM.groups.indexOf(it)
+                    mainActivityVM.groups[index].imgUri = null
+                }
+            }
+        }
+
         serializeAndSaveData()
     }
+
+    fun exportData () {
+        val packagedData = Json.encodeToString(
+            PackagedData.serializer(), PackagedData(
+                recordingsData = mainActivityVM.recordingsData.toList() as List<VersionedRecordingData>,
+                tags = mainActivityVM.tags.toList() as List<VersionedTag>,
+                groups = mainActivityVM.groups.toList() as List<VersionedRecordingGroup>
+            )
+        )
+
+
+    }
+    //endregion
 
     private fun createNotificationChannel() {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -411,7 +364,7 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-    private fun onShare(recording: Recording?) {
+    private fun onShareAsAudio(recording: Recording?) {
         fun shareOne(rec: Recording) {
             val shareIntent: Intent = Intent().apply {
                 action = Intent.ACTION_SEND
@@ -443,6 +396,17 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    private fun showDatePicker(onSelect: (Long) -> Unit) {
+        val picker = MaterialDatePicker.Builder.datePicker().setTheme(R.style.ThemeOverlay_App_DatePicker).build()
+        this.let {
+            picker.show(it.supportFragmentManager, picker.toString())
+            picker.addOnPositiveButtonClickListener { milli ->
+                onSelect(milli)
+            }
+        }
+    }
+
+    //region Image chooser functions
     private fun setupImageChooser() =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
@@ -472,12 +436,22 @@ class MainActivity : AppCompatActivity() {
         currentImageCallback = callback
         imageResultLauncher.launch(intent)
     }
+    //endregion
 
     private val mControllerCallback = object : MediaControllerCompat.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             super.onPlaybackStateChanged(state)
             mainActivityVM.currentPlaybackState = state?.state ?: PlaybackStateCompat.STATE_NONE
             mainActivityVM.playbackProgress = state?.position ?: 0L
+        }
+
+        override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
+            super.onMetadataChanged(metadata)
+            mainActivityVM.setCurrentPlayback(
+                mainActivityVM.recordings.find {
+                    it.uri.toString() == metadata?.getString(METADATA_KEY_MEDIA_URI)
+                }
+            )
         }
     }
 
@@ -575,6 +549,109 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(name: ComponentName) {
             mServiceMessenger = null
             unbindService(this)
+        }
+    }
+
+    @ExperimentalAnimationApi
+    @ExperimentalMaterialApi
+    @ExperimentalFoundationApi
+    @ExperimentalPagerApi
+    @Composable
+    fun App() {
+        val coroutineScope = rememberCoroutineScope()
+
+        MicCheckTheme {
+            StatusBarColor()
+            Surface {
+                AppUI(
+                    onStartRecord = { recorderClient.onStartRecord() },
+                    onPausePlayRecord = { recorderClient.onPausePlayRecord() },
+                    onStopRecord = {
+                        coroutineScope.launch {
+                            recorderClient.onStopRecord()
+                        }
+                    },
+                    onStartPlayback = {
+                        mainActivityVM.isGroupPlayback = false
+                        val currGroup = it.let {
+                            val recData = mainActivityVM.recordingsData.find { rec ->
+                                rec.recordingUri == it.uri.toString()
+                            }
+                            mainActivityVM.groups.find { group ->
+                                group.uuid == recData?.groupUUID
+                            }
+                        }
+
+                        mediaController.transportControls.playFromUri(
+                            it.uri,
+                            Pair(it, currGroup).toMetaData()
+                        )
+                        mainActivityVM.onSetBackdrop(1)
+                    },
+                    onPausePlayPlayback = {
+                        val currGroup = mainActivityVM.currentPlaybackRec.let {
+                            val recData = if (it == null)
+                                null
+                            else {
+                                mainActivityVM.recordingsData.find { rec ->
+                                    rec.recordingUri == it.uri.toString()
+                                }
+                            }
+                            mainActivityVM.groups.find { group ->
+                                group.uuid == recData?.groupUUID
+                            }
+                        }
+
+                        if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PLAYING)
+                            mediaController.transportControls.pause()
+                        else if ((mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PAUSED ||
+                                    mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_STOPPED) &&
+                            mainActivityVM.currentPlaybackRec != null
+                        )
+                            mediaController.transportControls.playFromUri(mainActivityVM.currentPlaybackRec!!.uri,
+                                Pair(mainActivityVM.currentPlaybackRec!!, currGroup).toMetaData()
+                            )
+                    },
+                    onSeekPlayback = {
+                        mediaController.transportControls.seekTo(
+                            (it * (mainActivityVM.currentPlaybackRec?.duration ?: 0)).toLong()
+                        )
+                    },
+                    onShareRecordings = { onShareAsAudio(it) },
+                    onChooseImage = this::onChooseImage,
+                    onStartGroupPlayback = { index, group ->
+                        mainActivityVM.isGroupPlayback = true
+                        val recsData = mainActivityVM.recordingsData.filter { it.groupUUID == group.uuid }
+
+                        val recs = mainActivityVM.recordings.filter { rec ->
+                            recsData.find { rec.uri.toString() == it.recordingUri } != null
+                        }.sortedBy { rec ->
+                            recsData.find { it.recordingUri == rec.uri.toString() }!!.groupOrderNumber
+                        }
+                        if (recs.isNotEmpty())
+                        {
+                            val bundleList = arrayListOf<Bundle>()
+                            recs.forEach { rec ->
+                                bundleList+=Pair(rec, group).toMetaData().also {
+                                    it.putString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI, rec.uri.toString())
+                                    it.putBoolean("isOfPlaybackList", true)
+                                }
+                            }
+                            mediaController.transportControls.playFromUri(recs[0].uri, Bundle().apply {
+                                putParcelableArrayList ("playbackList", bundleList)
+                                putInt("listIndex", index)
+                            })
+                        }
+                    },
+                    showDatePicker = this::showDatePicker,
+                    onSkipPlayback = {
+                        if (it == PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+                            mediaController.transportControls.skipToPrevious()
+                        else if (it == PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+                            mediaController.transportControls.skipToNext()
+                    }
+                )
+            }
         }
     }
 }

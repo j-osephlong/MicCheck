@@ -39,7 +39,6 @@ class RecorderService : Service() {
     var recordTime: Long = 0
 
     @SuppressLint("HandlerLeak")
-    /*TODO*/
     inner class IncomingHandler : Handler(Looper.myLooper()!!) {
         override fun handleMessage(msg: Message) {
             when (msg.obj as RecorderActions) {
@@ -190,7 +189,7 @@ class RecorderService : Service() {
 
     private fun createRecordingFile(): Uri {
         val values = ContentValues(4)
-        values.put(MediaStore.Audio.Media.TITLE, Random.nextLong())
+        values.put(MediaStore.Audio.Media.TITLE, "Untitled Recording")
         values.put(
             MediaStore.Audio.Media.DATE_ADDED,
             (System.currentTimeMillis() / 1000).toInt()

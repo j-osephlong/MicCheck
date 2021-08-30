@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.net.Uri
@@ -39,6 +41,8 @@ class AudioService : MediaBrowserServiceCompat() {
     private var oldUri: Uri? = null
     private var currUri: Uri? = null
     private var mediaExtras: Bundle? = null
+    private var playbackList: List<Pair<Uri, Bundle>>? = null
+    private var currListIndex: Int = 0
 
     private var notificationId = 101
     private var channelId = "micCheckAudioServiceControls"
@@ -51,7 +55,12 @@ class AudioService : MediaBrowserServiceCompat() {
 
         override fun onPlayFromUri(uri: Uri?, extras: Bundle?) {
             super.onPlayFromUri(uri, extras)
-
+            if (extras?.containsKey("playbackList") == true) {
+                onPlayFromGroup(extras)
+                return
+            }
+            else if (extras?.containsKey("isOfPlaybackList") == false)
+                playbackList = null
             uri?.let {
                 val mediaSource = extractMediaSourceFromUri(uri)
                 currUri = uri
@@ -66,6 +75,23 @@ class AudioService : MediaBrowserServiceCompat() {
             updateCurrentPosition()
         }
 
+        /**
+         * TODO: Group queue support
+         */
+        fun onPlayFromGroup (data: Bundle) {
+            val list = data.getParcelableArrayList<Bundle>("playbackList")
+            playbackList = list?.map {
+                Pair(
+                    Uri.parse(it.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI)),
+                    it.apply { it.remove(MediaMetadataCompat.METADATA_KEY_MEDIA_URI) }
+                )
+            }
+            if (playbackList == null)
+                return
+            currListIndex = data.getInt("listIndex")
+            onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
+        }
+
         override fun onPlay() {
             super.onPlay()
             currUri?.let {
@@ -73,6 +99,24 @@ class AudioService : MediaBrowserServiceCompat() {
                 displayNotification()
                 updateCurrentPosition()
             }
+        }
+
+        override fun onSkipToNext() {
+            super.onSkipToNext()
+            if (currListIndex  == playbackList?.size?.minus(1) ||
+                    playbackList == null)
+                return
+            currListIndex++
+            onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
+        }
+
+        override fun onSkipToPrevious() {
+            super.onSkipToPrevious()
+            if (currListIndex  == 0 ||
+                playbackList == null)
+                return
+            currListIndex--
+            onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
         }
 
         override fun onSeekTo(pos: Long) {
@@ -167,6 +211,7 @@ class AudioService : MediaBrowserServiceCompat() {
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE
                             or PlaybackStateCompat.ACTION_REWIND or PlaybackStateCompat.ACTION_FAST_FORWARD
+                            or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
                 )
 //                .addCustomAction(PlaybackStateCompat.CustomAction.Builder(
 //                    CUSTOM_ACTION_REPLAY,
@@ -231,6 +276,11 @@ class AudioService : MediaBrowserServiceCompat() {
                             MediaMetadataCompat.METADATA_KEY_MEDIA_URI,
                             currUri.toString()
                         )
+                        if (mediaExtras.containsKey(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI))
+                            putString(
+                                MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI,
+                                mediaExtras.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI)
+                            )
                     }.build()
                 )
             }
@@ -295,7 +345,8 @@ class AudioService : MediaBrowserServiceCompat() {
                 .setActions(
                     PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_PLAY_PAUSE or
                             PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_STOP or PlaybackStateCompat.ACTION_SEEK_TO or
-                            PlaybackStateCompat.ACTION_FAST_FORWARD or PlaybackStateCompat.ACTION_REWIND
+                            PlaybackStateCompat.ACTION_FAST_FORWARD or PlaybackStateCompat.ACTION_REWIND or
+                            PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
                 )
                 .setState(
                     state
@@ -303,6 +354,29 @@ class AudioService : MediaBrowserServiceCompat() {
                     , mExoPlayer?.currentPosition ?: 0L, 1.0f // Speed playing
                 ).build()
         )
+    }
+
+    private fun playbackListBehavior () : Boolean {
+        Log.e("PBLB", "CALLED")
+        if (playbackList == null)
+            return false
+        Log.e("PBLB", "ACTIVE")
+        //Handle end of track
+        currListIndex++
+        if (currListIndex == playbackList?.size)
+        {
+            Log.e("PBLB", "CLOSING")
+            currListIndex = 0
+            playbackList = null
+            updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
+            mExoPlayer!!.stop()
+            displayNotification()
+        } else {
+            Log.e("PBLB", "CONTINUING")
+            mMediaSessionCallback.onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
+        }
+
+        return true
     }
 
     private var mAttrs: AudioAttributes? = null
@@ -319,9 +393,12 @@ class AudioService : MediaBrowserServiceCompat() {
                     when (mExoPlayer!!.playbackState) {
                         Player.STATE_IDLE -> updatePlaybackState(PlaybackStateCompat.STATE_NONE)
                         Player.STATE_ENDED -> {
-                            updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
-                            mExoPlayer!!.stop()
-                            displayNotification()
+                            if (!playbackListBehavior())
+                            {
+                                updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
+                                mExoPlayer!!.stop()
+                                displayNotification()
+                            }
                         }
                         else ->
                             if (isPlaying)
@@ -394,6 +471,27 @@ class AudioService : MediaBrowserServiceCompat() {
         return Pair(pauseAction, playAction)
     }
 
+    private fun getSkipActions():
+            Pair<Notification.Action, Notification.Action> {
+        val prevAction = Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_baseline_skip_previous_24), "Prev",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+            )
+        ).build()
+
+        val nextAction = Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_baseline_skip_next_24), "Next",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+            )
+        ).build()
+
+        return Pair(prevAction, nextAction)
+    }
+
     private fun getReplayForwardActions():
             Pair<Notification.Action, Notification.Action> {
         val duration =
@@ -455,6 +553,7 @@ class AudioService : MediaBrowserServiceCompat() {
         // 3
         val (pauseAction, playAction) = getPausePlayActions()
         val (replayAction, forwardAction) = getReplayForwardActions()
+        val (prevAction, nextAction) = getSkipActions()
         // 4
         val notification = Notification.Builder(
             this@AudioService, channelId
@@ -473,7 +572,12 @@ class AudioService : MediaBrowserServiceCompat() {
             .setSmallIcon(R.drawable.ic_notification_temp)
             .also {
                 if (mMediaSession!!.controller.playbackState.state != PlaybackStateCompat.STATE_STOPPED)
-                    it.addAction(replayAction)
+                {
+                    if (playbackList == null)
+                        it.addAction(replayAction)
+                    else
+                        it.addAction(prevAction)
+                }
                 it.addAction(
                     when (mMediaSession!!.controller.playbackState.state) {
                         PlaybackStateCompat.STATE_PLAYING -> pauseAction
@@ -481,7 +585,18 @@ class AudioService : MediaBrowserServiceCompat() {
                     }
                 )
                 if (mMediaSession!!.controller.playbackState.state != PlaybackStateCompat.STATE_STOPPED)
-                    it.addAction(forwardAction)
+                {
+                    if (playbackList == null)
+                        it.addAction(forwardAction)
+                    else
+                        it.addAction(nextAction)
+                }
+
+                if (mediaExtras?.containsKey("CUSTOM_KEY_COLOR") == true)
+                {
+                    it.setColorized(true)
+                    it.setColor(mediaExtras?.getInt("CUSTOM_KEY_COLOR")?: Color.GRAY)
+                }
             }
             .style =
             Notification.MediaStyle()
@@ -511,11 +626,19 @@ class AudioService : MediaBrowserServiceCompat() {
 //        GlobalScope.launch {
 //            // 5
 
-        val bitmap =
-            BitmapFactory.decodeResource(
-                this@AudioService.resources,
-                R.drawable.ic_notification_temp
-            )
+        Log.e("TESTA", mediaExtras!!.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI).toString())
+
+        val bitmap = mediaExtras!!.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI).let {
+            if (it != null && it != "null")
+                ImageDecoder.decodeBitmap(
+                    ImageDecoder.createSource(
+                        contentResolver,
+                        Uri.parse(it)
+                    )
+                )
+            else
+                BitmapFactory.decodeResource(resources, R.drawable.ic_notification_temp)
+        }
         // 7
         initializeNotification(
             mediaDescription,

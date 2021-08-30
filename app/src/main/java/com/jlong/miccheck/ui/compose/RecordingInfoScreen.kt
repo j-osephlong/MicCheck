@@ -6,6 +6,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -30,10 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.flowlayout.FlowRow
-import com.jlong.miccheck.Recording
-import com.jlong.miccheck.RecordingData
-import com.jlong.miccheck.Tag
-import com.jlong.miccheck.TimeStamp
+import com.jlong.miccheck.*
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -46,7 +45,7 @@ fun RecordingInfoTitleText(
 ) {
     Text(
         title ?: "EMPTY CASSETTE",
-        style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+        style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold),
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.padding(18.dp, 0.dp, 18.dp, 12.dp)
@@ -54,9 +53,10 @@ fun RecordingInfoTitleText(
 }
 
 @Composable
-fun RecordingInfoTitleField(
+fun TitleField(
     titleText: String,
-    setText: (String) -> Unit
+    setText: (String) -> Unit,
+    color: Color = MaterialTheme.colors.secondary
 ) {
     TextField(
         value = titleText,
@@ -66,13 +66,14 @@ fun RecordingInfoTitleField(
             .padding(18.dp, 0.dp, 18.dp, 12.dp),
         colors =
         TextFieldDefaults.textFieldColors(
-            backgroundColor = MaterialTheme.colors.secondary,
+            textColor = if (color.luminance() > .65f) Color.Black else Color.White,
+            backgroundColor = color,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
-            cursorColor = MaterialTheme.colors.onSurface
+            cursorColor = if (color.luminance() > .65f) Color.Black else Color.White
         ),
         shape = RoundedCornerShape(14.dp),
-        textStyle = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+        textStyle = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.ExtraBold),
     )
 }
 
@@ -117,6 +118,7 @@ fun RecordingInfoDescriptionField(
 fun RecordingsInfoScreen(
     recording: Recording?,
     recordingData: RecordingData?,
+    recordingGroup: RecordingGroup?,
     onPlay: () -> Unit,
     onPlayTimestamp: (Long) -> Unit,
     onEditFinished: (String, String) -> Unit,
@@ -125,151 +127,201 @@ fun RecordingsInfoScreen(
     onAddTag: () -> Unit,
     onDeleteTag: (Tag) -> Unit,
     onClickTag: (Tag) -> Unit,
+    onClickGroupTag: () -> Unit,
     onDeleteTimestamp: (TimeStamp) -> Unit
 ) {
     val (titleText, setTitleText) = remember { mutableStateOf(recording?.name ?: "") }
     val (descText, setDescText) = remember { mutableStateOf(recordingData?.description ?: "") }
     var editing by remember { mutableStateOf(false) }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-        Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(18.dp))
-            Crossfade(targetState = editing, modifier = Modifier.animateContentSize()) {
-                if (it) RecordingInfoTitleField(titleText = titleText, setText = setTitleText)
-                else RecordingInfoTitleText(title = recording?.name)
-            }
-            if (recording != null) {
-                Text(
-                    recording.date.format(
-                        DateTimeFormatter.ofPattern("LLLL d")
-                            .withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault())
-                    ) +
-                            when (recording.date.dayOfMonth % 10) {
-                                1 -> if (recording.date.dayOfMonth == 11) "th" else "st"
-                                2 -> if (recording.date.dayOfMonth == 12) "th" else "nd"
-                                3 -> if (recording.date.dayOfMonth == 13) "th" else "rd"
-                                else -> "th"
-                            } +
-                            recording.date.format(
-                                DateTimeFormatter.ofPattern(", yyyy")
-                                    .withLocale(Locale.getDefault())
-                                    .withZone(ZoneId.systemDefault())
-                            ) + " • " +
-                            recording.duration.toLong().toTimestamp()
-                            + " • " + recording.sizeStr, //seconds,
-                    style = MaterialTheme.typography.h6,
-                    modifier = Modifier.padding(start = 18.dp)
-                )
+        Column (Modifier.fillMaxSize()){
+            Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(18.dp))
-            }
-            LazyColumn {
-                if (recording != null)
-                    item {
-                        LazyRow(horizontalArrangement = Arrangement.Center) {
-                            item {
-                                Spacer(modifier = Modifier.width(18.dp))
-                                Chip(
-                                    text = "",
-                                    onClick = onAddTag,
-                                    color = MaterialTheme.colors.secondary,
-                                    icon = Icons.Rounded.Add,
-                                    contentColor = MaterialTheme.colors.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Chip(
-                                    text = recordingData?.group?.name ?: "No Group",
-                                    onClick = { },
-                                    color = MaterialTheme.colors.secondary,
-                                    contentColor = MaterialTheme.colors.onSurface
-                                )
-                            }
-                            itemsIndexed(recordingData!!.tags) { _, tag ->
-                                Row {
+                Crossfade(targetState = editing, modifier = Modifier.animateContentSize()) {
+                    if (it) TitleField(titleText = titleText, setText = setTitleText)
+                    else RecordingInfoTitleText(title = recording?.name)
+                }
+                if (recording != null) {
+                    Text(
+                        recording.date.format(
+                            DateTimeFormatter.ofPattern("LLLL d")
+                                .withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault())
+                        ) +
+                                when (recording.date.dayOfMonth % 10) {
+                                    1 -> if (recording.date.dayOfMonth == 11) "th" else "st"
+                                    2 -> if (recording.date.dayOfMonth == 12) "th" else "nd"
+                                    3 -> if (recording.date.dayOfMonth == 13) "th" else "rd"
+                                    else -> "th"
+                                } +
+                                recording.date.format(
+                                    DateTimeFormatter.ofPattern(", yyyy")
+                                        .withLocale(Locale.getDefault())
+                                        .withZone(ZoneId.systemDefault())
+                                ) + " • " +
+                                recording.duration.toLong().toTimestamp()
+                                + " • " + recording.sizeStr, //seconds,
+                        style = MaterialTheme.typography.h6,
+                        modifier = Modifier.padding(start = 18.dp)
+                    )
+                    Spacer(Modifier.height(18.dp))
+                }
+                LazyColumn (Modifier.weight(1f)) {
+                    if (recording != null)
+                        item {
+
+                            LazyRow(horizontalArrangement = Arrangement.Center) {
+                                item {
+                                    Spacer(modifier = Modifier.width(18.dp))
+                                    Chip(
+                                        text = "",
+                                        onClick = onAddTag,
+                                        color = MaterialTheme.colors.secondary,
+                                        icon = Icons.Rounded.Add,
+                                        contentColor = MaterialTheme.colors.onSecondary
+                                    )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Chip(
-                                        tag.name,
-                                        onClick = { onClickTag(tag) },
-                                        icon =
-                                        if (editing) Icons.Rounded.Remove
-                                        else null,
-                                        onIconClick = {
-                                            onDeleteTag(tag)
-                                        }
+                                        text = recordingGroup?.name ?: "No Group",
+                                        onClick = onClickGroupTag,
+                                        color = MaterialTheme.colors.secondary,
+                                        contentColor = MaterialTheme.colors.onSecondary
                                     )
                                 }
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        Row(Modifier.padding(start = 8.dp)) {
-                            IconButton(onPlay) {
-                                Icon(Icons.Rounded.PlayArrow, "Play")
-                            }
-                            IconButton({
-                                editing = if (editing) {
-                                    onEditFinished(titleText, descText); false
-                                } else true
-                            }) {
-                                Crossfade(targetState = editing) {
-                                    if (it)
-                                        Icon(Icons.Rounded.Save, "Save")
-                                    else
-                                        Icon(Icons.Rounded.Edit, "Edit")
+                                itemsIndexed(recordingData!!.tags) { _, tag ->
+                                    Row {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Chip(
+                                            tag.name,
+                                            onClick = {
+                                                if (!editing) onClickTag(tag) else onDeleteTag(
+                                                    tag
+                                                )
+                                            },
+                                            icon =
+                                            if (editing) Icons.Rounded.Remove
+                                            else null,
+                                            onIconClick = {
+                                                onDeleteTag(tag)
+                                            }
+                                        )
+                                    }
                                 }
                             }
-                            IconButton(onShare) {
-                                Icon(Icons.Rounded.Share, "Share")
-                            }
-                            IconButton(onDelete) {
-                                Icon(Icons.Rounded.Delete, "Delete")
-                            }
+                            Spacer(Modifier.height(18.dp))
                         }
-                        Spacer(Modifier.height(12.dp))
-                    }
-                item {
-                    Text(
-                        "Description",
-                        style = MaterialTheme.typography.h5,
-                        modifier = Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Crossfade(
-                        targetState = editing, modifier = Modifier
-                            .animateContentSize()
-//                        .padding(start = 30.dp)
-                    ) {
-                        if (it) RecordingInfoDescriptionField(
-                            descriptionText = descText,
-                            setText = setDescText
-                        )
-                        else RecordingInfoDescriptionText(description = recordingData?.description)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                if (recordingData?.timeStamps?.isNotEmpty() == true) {
                     item {
                         Text(
-                            "Time Stamps",
+                            "Description",
                             style = MaterialTheme.typography.h5,
-                            modifier = Modifier.padding(start = 18.dp)
+                            modifier = Modifier.padding(18.dp, 0.dp, 0.dp, 0.dp)
                         )
-                    }
-                    itemsIndexed(recordingData.timeStamps.sortedBy { it.timeMilli }) { index, timeStamp ->
-                        Column(
-                            Modifier
-                                .padding(start = 18.dp)
+                        Spacer(Modifier.height(8.dp))
+                        Crossfade(
+                            targetState = editing, modifier = Modifier
+                                .animateContentSize()
+//                        .padding(start = 30.dp)
                         ) {
-                            TimestampElm(
-                                timeStamp,
-                                { onPlayTimestamp(timeStamp.timeMilli) },
-                                { onDeleteTimestamp(timeStamp) }
+                            if (it) RecordingInfoDescriptionField(
+                                descriptionText = descText,
+                                setText = setDescText
                             )
-                            if (index != recordingData.timeStamps.size - 1)
-                                Divider(Modifier.fillMaxWidth())
+                            else RecordingInfoDescriptionText(description = recordingData?.description)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    if (recordingData?.timeStamps?.isNotEmpty() == true) {
+                        item {
+                            Text(
+                                "Time Stamps",
+                                style = MaterialTheme.typography.h5,
+                                modifier = Modifier.padding(start = 18.dp)
+                            )
+                        }
+                        itemsIndexed(recordingData.timeStamps.sortedBy { it.timeMilli }) { index, timeStamp ->
+                            Column(
+                                Modifier
+                                    .padding(start = 18.dp)
+                            ) {
+                                TimestampElm(
+                                    timeStamp,
+                                    { onPlayTimestamp(timeStamp.timeMilli) },
+                                    { onDeleteTimestamp(timeStamp) }
+                                )
+                                if (index != recordingData.timeStamps.size - 1)
+                                    Divider(Modifier.fillMaxWidth())
+                            }
                         }
                     }
                 }
+                Column (
+                    Modifier
+                        .fillMaxWidth(),
+                        verticalArrangement = Arrangement.Bottom
+                ) {
+                    Divider(Modifier.fillMaxWidth())
+                    Row (
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onDelete, enabled = !editing,
+                            colors = ButtonDefaults.buttonColors(
+                                contentColor = MaterialTheme.colors.onBackground,
+                                disabledContentColor = MaterialTheme.colors.onBackground.copy(
+                                    alpha = .5f
+                                ),
+                                backgroundColor = Color.Transparent,
+                                disabledBackgroundColor = Color.Transparent)) {
+                            Text ("Delete")
+                        }
+                        TextButton(onClick = onShare, enabled = !editing,
+                            colors = ButtonDefaults.buttonColors(
+                                contentColor = MaterialTheme.colors.onBackground,
+                                disabledContentColor = MaterialTheme.colors.onBackground.copy(
+                                    alpha = .5f
+                                ),
+                                backgroundColor = Color.Transparent,
+                                disabledBackgroundColor = Color.Transparent)) {
+                            Text ("Share")
+                        }
+                        TextButton(onClick = {
+                            editing = if (editing) {
+                                onEditFinished(titleText, descText); false
+                            } else true },
+                            colors = ButtonDefaults.buttonColors(
+                                contentColor = MaterialTheme.colors.onBackground,
+                                disabledContentColor = MaterialTheme.colors.onBackground.copy(
+                                    alpha = .5f
+                                ),
+                                backgroundColor = Color.Transparent,
+                                disabledBackgroundColor = Color.Transparent
+                            )
+                        ) {
+                            Crossfade(targetState = editing) {
+                                if (!it)
+                                    Text ("Edit")
+                                else
+                                    Text ("Save")
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        OutlinedButton(onClick = onPlay,
+                            colors = ButtonDefaults.buttonColors(
+                                backgroundColor = MaterialTheme.colors.primary,
+                                contentColor = MaterialTheme.colors.onPrimary
+                            ),
+                            enabled = !editing,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(0.dp, Color.Unspecified)
+                        ) {
+                            Text ("Play")
+                        }
+                    }
+                }
+
             }
         }
+
     }
 }
 
@@ -346,7 +398,7 @@ fun TagScreen(
         ) {
             Text(
                 "Add Tag",
-                style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
             )
             Text(
@@ -422,7 +474,7 @@ fun TimestampScreen(
         ) {
             Text(
                 "Add Timestamp",
-                style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 4.dp)
             )
             Text(
@@ -434,7 +486,7 @@ fun TimestampScreen(
                         ) + //hours
                         ((timeMilli / 1000) / 60) % 60 + ":" + //minutes
                         ((timeMilli / 1000) % 60).toString(),
-                style = MaterialTheme.typography.h4,
+                style = MaterialTheme.typography.h5,
                 modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -514,7 +566,7 @@ fun TagSelectScreen(
         ) {
             Text(
                 "Select Tag",
-                style = MaterialTheme.typography.h4.copy(fontWeight = FontWeight.ExtraBold),
+                style = MaterialTheme.typography.h5.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(0.dp, 0.dp, 0.dp, 12.dp)
             )
             Text(
@@ -560,7 +612,8 @@ fun TagScreenPreview(
                     "",
                     0,
                     0,
-                    "0B"
+                    "0B",
+                    path = ""
                 ),
                 recordingData = RecordingData(
                     Uri.EMPTY.toString()
@@ -576,14 +629,15 @@ fun TagScreenPreview(
 @Composable
 fun InfoPreview() {
     Surface(Modifier.fillMaxSize()) {
-        MicCheckTheme {
+        MicCheckTheme (true) {
             RecordingsInfoScreen(
                 recording = Recording(
                     Uri.EMPTY,
                     "New Recording",
                     90000,
                     0,
-                    "0B"
+                    "0B",
+                    path = ""
                 ),
                 recordingData = RecordingData(
                     Uri.EMPTY.toString(),
@@ -593,6 +647,19 @@ fun InfoPreview() {
                             "Donec scelerisque sollicitudin enim eu venenatis. Duis tincidunt laoreet ex, \n" +
                             "in pretium orci vestibulum eget. Class aptent taciti sociosqu ad litora torquent\n" +
                             "per conubia nostra, per inceptos himenaeos. Duis pharetra luctus lacus ut \n" +
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
+                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
                             "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n",
                     timeStamps = listOf(
 //                        TimeStamp(13000L, "Sucks", "Wowowo\nwowowowo\nh"),
@@ -601,12 +668,14 @@ fun InfoPreview() {
                     )
 
                 ),
+                recordingGroup = null,
                 onEditFinished = { _, _ -> },
                 onPlay = { },
                 onDelete = { },
                 onAddTag = { },
                 onDeleteTag = { },
                 onClickTag = { },
+                onClickGroupTag = {},
                 onPlayTimestamp = { _ -> },
                 onDeleteTimestamp = { },
                 onShare = { }
