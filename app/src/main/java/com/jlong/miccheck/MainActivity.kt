@@ -10,11 +10,13 @@ import android.content.pm.PackageManager
 import android.media.MediaMetadata.METADATA_KEY_MEDIA_URI
 import android.net.Uri
 import android.os.*
+import android.os.StrictMode.VmPolicy
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,10 +26,11 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.Surface
+import androidx.compose.runtime.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.arthenica.mobileffmpeg.FFmpeg
 import com.google.accompanist.pager.ExperimentalPagerApi
+import com.google.android.material.datepicker.MaterialDatePicker
 import com.jlong.miccheck.ui.compose.AppUI
 import com.jlong.miccheck.ui.compose.StatusBarColor
 import com.jlong.miccheck.ui.theme.MicCheckTheme
@@ -39,15 +42,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.util.*
-import android.os.StrictMode
-import android.os.StrictMode.VmPolicy
-import android.provider.MediaStore
-import android.widget.Toast
-import androidx.compose.runtime.*
-import androidx.core.net.toFile
-import androidx.lifecycle.ViewModel
-import com.google.android.material.datepicker.MaterialDatePicker
-import java.time.LocalDate
 
 //import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
@@ -94,12 +88,15 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.FOREGROUND_SERVICE
             ) == PackageManager.PERMISSION_DENIED
         ) {
-            val permissions = arrayOf(
+            var permissions = arrayOf(
                 Manifest.permission.READ_EXTERNAL_STORAGE,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,
                 Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.FOREGROUND_SERVICE
             )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                permissions += Manifest.permission.FOREGROUND_SERVICE
+            }
+
             requestPermissions(permissions, 0)
         }
 

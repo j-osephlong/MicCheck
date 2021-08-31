@@ -10,11 +10,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Launch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,15 +32,10 @@ import androidx.core.graphics.ColorUtils
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.PagerState
-import com.google.accompanist.pager.rememberPagerState
 import com.jlong.miccheck.*
 import com.jlong.miccheck.ui.theme.MicCheckTheme
-import com.vanpra.composematerialdialogs.MaterialDialog
-import com.vanpra.composematerialdialogs.datetime.date.DatePickerDefaults
-import com.vanpra.composematerialdialogs.datetime.date.datepicker
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -77,7 +73,7 @@ fun RecordingsScreen(
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-        if (recordings.size > 0)
+        if (recordings.isNotEmpty())
             HorizontalPager(
                 state = pageState,
                 modifier = Modifier.fillMaxSize(),
@@ -216,11 +212,11 @@ fun RecordingsListSection(
 
     val datePickerCallback: (Long) -> Unit = {
         val date = LocalDateTime.ofInstant(
-                Instant.ofEpochMilli(it),
-                TimeZone.getDefault().toZoneId()
-            ).toLocalDate()
-        val bestMatch = recordingsGrouped.minByOrNull {
-            abs(it.value[0].first.date.toLocalDate().toEpochDay() - date.toEpochDay())
+            Instant.ofEpochMilli(it),
+            TimeZone.getDefault().toZoneId()
+        ).toLocalDate()
+        val bestMatch = recordingsGrouped.minByOrNull { match ->
+            abs(match.value[0].first.date.toLocalDate().toEpochDay() - date.toEpochDay())
         }
         if (bestMatch != null) {
             val index = recordingsGrouped.toList().indexOf(bestMatch.toPair())
@@ -251,13 +247,13 @@ fun RecordingsListSection(
                             groups.find { it.uuid == item.second.groupUUID},
                             onOpenRecordingInfo = onOpenRecordingInfo,
                             onClick = {
-                                if (selectedRecordings.isNotEmpty())
-                                    onSelectRecording(item.first)
-                                else if (item.first == currentPlaybackRec)
-                                    onOpenPlayback()
-                                else {
-                                    onStartPlayback(item.first)
-                                    onOpenPlayback()
+                                when {
+                                    selectedRecordings.isNotEmpty() -> onSelectRecording(item.first)
+                                    item.first == currentPlaybackRec -> onOpenPlayback()
+                                    else -> {
+                                        onStartPlayback(item.first)
+                                        onOpenPlayback()
+                                    }
                                 }
                             },
                             onClickTag = onClickTag,

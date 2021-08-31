@@ -13,7 +13,6 @@ import android.os.*
 import android.provider.MediaStore
 import android.util.Log
 import java.io.IOException
-import kotlin.random.Random
 
 enum class RecorderActions {
     START, PAUSE, RESUME, STOP
@@ -195,7 +194,9 @@ class RecorderService : Service() {
             (System.currentTimeMillis() / 1000).toInt()
         )
         values.put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
-        values.put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/micCheck/")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/micCheck/")
+        }
 
         val audioUri = applicationContext.contentResolver.insert(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,

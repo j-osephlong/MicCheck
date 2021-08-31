@@ -24,9 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.jlong.miccheck.Recording
-import com.jlong.miccheck.RecordingData
 import com.jlong.miccheck.RecordingGroup
-import com.jlong.miccheck.Tag
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
@@ -98,10 +96,13 @@ fun PlaybackBackdrop(
             var newVal by remember { mutableStateOf(0f) }
             Slider(
                 value =
-                if (valChanging) newVal
-                else if (currentPlaybackRec != null) (
-                        playbackProgress / (currentPlaybackRec.duration.toFloat())
-                        ) else 0f,
+                when {
+                    valChanging -> newVal
+                    currentPlaybackRec != null -> (
+                            playbackProgress / (currentPlaybackRec.duration.toFloat())
+                            )
+                    else -> 0f
+                },
                 onValueChange = {
                     valChanging = true
                     newVal = it

@@ -236,8 +236,8 @@ fun ResultsList(
                 }
                 if (item is TimeStamp) {
                     TimestampSearchElm(
-                        timeStamp = item,
-                        { onOpenTimeStamp(Uri.parse(item.recordingUri), item) })
+                        timeStamp = item
+                    ) { onOpenTimeStamp(Uri.parse(item.recordingUri), item) }
                 }
                 if (item is RecordingGroup)
                     GroupSearchElm(group = item) {

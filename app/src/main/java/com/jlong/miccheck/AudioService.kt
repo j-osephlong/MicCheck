@@ -10,6 +10,7 @@ import android.graphics.ImageDecoder
 import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -357,22 +358,18 @@ class AudioService : MediaBrowserServiceCompat() {
     }
 
     private fun playbackListBehavior () : Boolean {
-        Log.e("PBLB", "CALLED")
         if (playbackList == null)
             return false
-        Log.e("PBLB", "ACTIVE")
         //Handle end of track
         currListIndex++
         if (currListIndex == playbackList?.size)
         {
-            Log.e("PBLB", "CLOSING")
             currListIndex = 0
             playbackList = null
             updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
             mExoPlayer!!.stop()
             displayNotification()
         } else {
-            Log.e("PBLB", "CONTINUING")
             mMediaSessionCallback.onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
         }
 
@@ -626,10 +623,11 @@ class AudioService : MediaBrowserServiceCompat() {
 //        GlobalScope.launch {
 //            // 5
 
-        Log.e("TESTA", mediaExtras!!.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI).toString())
 
         val bitmap = mediaExtras!!.getString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI).let {
-            if (it != null && it != "null")
+            if (it != null && it != "null" &&
+                Build.VERSION.SDK_INT >= 28
+            )
                 ImageDecoder.decodeBitmap(
                     ImageDecoder.createSource(
                         contentResolver,

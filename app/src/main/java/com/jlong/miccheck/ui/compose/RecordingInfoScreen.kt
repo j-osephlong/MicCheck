@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -250,6 +252,33 @@ fun RecordingsInfoScreen(
                                 )
                                 if (index != recordingData.timeStamps.size - 1)
                                     Divider(Modifier.fillMaxWidth())
+                            }
+                        }
+                        item {
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .padding(18.dp, 0.dp)
+                                .fillMaxWidth()
+                        ) {
+                            Text(
+                                "Stored at ${recording?.path}",
+                                style = TextStyle(fontStyle = FontStyle.Italic),
+                                color = MaterialTheme.colors.onBackground.copy(alpha = .65f),
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { /*TODO*/ }) {
+                                Icon(
+                                    Icons.Rounded.Info,
+                                    "Info",
+                                    tint = MaterialTheme.colors.onBackground.copy(alpha = .65f),
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
@@ -646,21 +675,7 @@ fun InfoPreview() {
                             "pulvinar facilisis justo mollis, auctor consequat urna. Morbi a bibendum metus. \n" +
                             "Donec scelerisque sollicitudin enim eu venenatis. Duis tincidunt laoreet ex, \n" +
                             "in pretium orci vestibulum eget. Class aptent taciti sociosqu ad litora torquent\n" +
-                            "per conubia nostra, per inceptos himenaeos. Duis pharetra luctus lacus ut \n" +
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n"+
-                            "vestibulum. Maecenas ipsum lacus, lacinia quis posuere ut, pulvinar vitae dolor.\n",
+                            "per conubia nostra, per inceptos himenaeos. Duis pharetra luctus lacus ut \n",
                     timeStamps = listOf(
 //                        TimeStamp(13000L, "Sucks", "Wowowo\nwowowowo\nh"),
 //                        TimeStamp(240000L, "Haha  woww owow owo "),
@@ -676,7 +691,7 @@ fun InfoPreview() {
                 onDeleteTag = { },
                 onClickTag = { },
                 onClickGroupTag = {},
-                onPlayTimestamp = { _ -> },
+                onPlayTimestamp = { },
                 onDeleteTimestamp = { },
                 onShare = { }
             )

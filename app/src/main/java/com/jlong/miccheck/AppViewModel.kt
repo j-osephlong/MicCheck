@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.IntentSender
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import android.support.v4.media.session.PlaybackStateCompat
 import android.text.format.Formatter
@@ -231,11 +232,13 @@ class AppViewModel : ViewModel() {
                     "${MediaStore.Audio.Media._ID} = ?",
                     arrayOf(ContentUris.parseId(recording.uri).toString())
                 )
-            } catch (securityException: RecoverableSecurityException) {
-                val intentSender =
-                    securityException.userAction.actionIntent.intentSender
-                intentSender.let {
-                    requestFilePermission(it)
+            } catch (securityException: RuntimeException) {
+                if (Build.VERSION.SDK_INT >= 29 &&
+                    securityException is RecoverableSecurityException
+                ) {
+                    val intentSender =
+                        securityException.userAction.actionIntent.intentSender
+                    requestFilePermission(intentSender)
                 }
             }
             recordingRef.name = title
@@ -269,11 +272,15 @@ class AppViewModel : ViewModel() {
                     context.contentResolver.delete(
                         recording.uri, null, null
                     )
-                } catch (securityException: RecoverableSecurityException) {
-                    val intentSender =
-                        securityException.userAction.actionIntent.intentSender
-                    requestFilePermission(intentSender)
-            }
+                } catch (securityException: RuntimeException) {
+                    if (Build.VERSION.SDK_INT >= 29 &&
+                        securityException is RecoverableSecurityException
+                    ) {
+                        val intentSender =
+                            securityException.userAction.actionIntent.intentSender
+                        requestFilePermission(intentSender)
+                    }
+                }
 
             recordings.remove(recording)
             recordingsData.remove(recordingData)
@@ -458,9 +465,13 @@ class AppViewModel : ViewModel() {
     suspend fun loadRecordings(context: Context) {
         Log.i("MC VM", "loadRecordings !!")
 
-        val collection = MediaStore.Audio.Media.getContentUri(
-            MediaStore.VOLUME_EXTERNAL
-        )
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Audio.Media.getContentUri(
+                MediaStore.VOLUME_EXTERNAL
+            )
+        } else {
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -470,8 +481,16 @@ class AppViewModel : ViewModel() {
             MediaStore.Audio.Media.DATE_MODIFIED,
             MediaStore.Audio.Media.DATA
         )
-        val selection = MediaStore.Audio.Media.RELATIVE_PATH + " like ?"
-        val selectionArgs = arrayOf("%micCheck%")
+        val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Audio.Media.RELATIVE_PATH + " like ?"
+        } else {
+            ""
+        }
+        val selectionArgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf("%micCheck%")
+        } else {
+            arrayOf()
+        }
         val sortOrder = MediaStore.Audio.Media.DATE_MODIFIED + " DESC"
 
         val query = context.contentResolver.query(

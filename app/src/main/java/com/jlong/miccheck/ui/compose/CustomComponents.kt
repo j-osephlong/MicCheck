@@ -26,15 +26,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.capitalize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.toUpperCase
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import com.jlong.miccheck.RecordingGroup
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 
 @Composable
@@ -458,7 +455,7 @@ fun NewButtons(
 @Composable
 fun NewButtonPreview() {
     MicCheckTheme {
-        NewButtons(0, {})
+        NewButtons(0) {}
     }
 }
 
