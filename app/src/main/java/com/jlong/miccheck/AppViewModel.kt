@@ -501,8 +501,6 @@ class AppViewModel : ViewModel() {
             sortOrder
         )
 
-        recordings.removeRange(0, recordings.size)
-
         query?.use { cursor ->
             // Cache column indices.
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
@@ -515,6 +513,8 @@ class AppViewModel : ViewModel() {
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+
+            recordings.removeRange(0, recordings.size)
 
             while (cursor.moveToNext()) {
                 // Get values of columns for a given Audio.

@@ -201,11 +201,12 @@ fun RecordingsListSection(
     modifier: Modifier = Modifier
 ) {
 
-    var recordingsGrouped by remember { mutableStateOf(mapOf<RecordingKey, List<Pair<Recording, RecordingData>>>()) }
+    var recordingsGrouped by remember { mutableStateOf(mapOf<Long, List<Pair<Recording, RecordingData>>>()) }
     Log.e("RL", "Creating grouped")
     val rec = recordings.toMutableList().apply { sortByDescending { it.uri.toString() } }
     val recData = recordingsData.toMutableList().apply { sortByDescending { it.recordingUri } }
-    recordingsGrouped = rec.zip(recData).groupBy { it.first.toDateKey() }
+    recordingsGrouped = rec.zip(recData)
+        .groupBy { it.first.toDateKey() }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -231,17 +232,20 @@ fun RecordingsListSection(
 
     Column(modifier) {
         LazyColumn(Modifier.fillMaxSize(), listState) {
-            recordingsGrouped.forEach { (_, recordings) ->
-                stickyHeader {
-                    DateHeader(
-                        recordings[0].first.date
-                    ) {
-                        showDatePicker(datePickerCallback)
+            recordingsGrouped
+                .toList()
+                .sortedByDescending { it.first }
+                .forEach { (_, recordings) ->
+                    stickyHeader {
+                        DateHeader(
+                            recordings[0].first.date
+                        ) {
+                            showDatePicker(datePickerCallback)
+                        }
                     }
-                }
 
-                itemsIndexed(recordings, key = { _, rec -> rec.first.uri }) { index, item ->
-                    Column {
+                    itemsIndexed(recordings, key = { _, rec -> rec.first.uri }) { index, item ->
+                        Column {
                         RecordingElm(
                             item,
                             groups.find { it.uuid == item.second.groupUUID},
@@ -363,6 +367,17 @@ fun RecordingElm(
     modifier: Modifier = Modifier,
     accentColor: Color = MaterialTheme.colors.primary
 ) {
+    val correctedAccentColor =
+        if (accentColor.luminance() > .65 && !isSystemInDarkTheme())
+            Color(
+                ColorUtils.blendARGB(
+                    accentColor.toArgb(),
+                    Color.Black.toArgb(),
+                    .1f
+                )
+            )
+        else accentColor
+
     Card(
         elevation = 0.dp,
         modifier = modifier.combinedClickable(
@@ -417,8 +432,8 @@ fun RecordingElm(
                             style =
                                 MaterialTheme.typography.h6.copy(
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (isPlaying) accentColor
-                                            else MaterialTheme.colors.onBackground
+                                    color = if (isPlaying) correctedAccentColor
+                                    else MaterialTheme.colors.onBackground
                                 ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -464,21 +479,16 @@ fun RecordingElm(
                                 start = 12.dp
                             ),
                             colors = CheckboxDefaults.colors(
-                                checkmarkColor = if (!isSystemInDarkTheme())
-                                {
-                                    if (accentColor.luminance() > .65f)
-                                        Color(ColorUtils.blendARGB(
+                                checkmarkColor =
+                                if (!isSystemInDarkTheme() && accentColor.luminance() > .65f)
+                                    Color(
+                                        ColorUtils.blendARGB(
                                             accentColor.toArgb(),
                                             Color.Black.toArgb(),
-                                            .8f
-                                        ) )
-                                    else
-                                        Color(ColorUtils.blendARGB(
-                                            accentColor.toArgb(),
-                                            Color.White.toArgb(),
-                                            .8f
-                                        ))
-                                } else MaterialTheme.colors.background,
+                                            .5f
+                                        )
+                                    )
+                                else MaterialTheme.colors.background,
                                 checkedColor = accentColor
                             )
                         )

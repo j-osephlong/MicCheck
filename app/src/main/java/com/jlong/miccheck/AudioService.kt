@@ -56,6 +56,7 @@ class AudioService : MediaBrowserServiceCompat() {
 
         override fun onPlayFromUri(uri: Uri?, extras: Bundle?) {
             super.onPlayFromUri(uri, extras)
+            Log.i("play@AudioService", "Attempting playback from uri.")
             if (extras?.containsKey("playbackList") == true) {
                 onPlayFromGroup(extras)
                 return
@@ -180,7 +181,6 @@ class AudioService : MediaBrowserServiceCompat() {
             stopForeground(true)
         }
 
-
         private fun updateCurrentPosition() {
             if (mExoPlayer == null) {
                 return
@@ -289,6 +289,7 @@ class AudioService : MediaBrowserServiceCompat() {
     }
 
     private fun play(mediaSource: MediaSource) {
+        Log.i("play@AudioService", "Playing new.")
         if (mExoPlayer == null) initializePlayer()
         mExoPlayer?.apply {
             // AudioAttributes here from exoplayer package !!!
@@ -303,6 +304,7 @@ class AudioService : MediaBrowserServiceCompat() {
     }
 
     private fun play() {
+        Log.i("play@AudioService", "Playing old.")
         mExoPlayer?.apply {
             mExoPlayer?.playWhenReady = true
             mMediaSession?.isActive = true

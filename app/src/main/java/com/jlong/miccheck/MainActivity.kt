@@ -11,6 +11,7 @@ import android.media.MediaMetadata.METADATA_KEY_MEDIA_URI
 import android.net.Uri
 import android.os.*
 import android.os.StrictMode.VmPolicy
+import android.provider.MediaStore
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
@@ -29,6 +30,7 @@ import androidx.compose.material.Surface
 import androidx.compose.runtime.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.arthenica.mobileffmpeg.FFmpeg
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jlong.miccheck.ui.compose.AppUI
@@ -435,6 +437,65 @@ class MainActivity : AppCompatActivity() {
     }
     //endregion
 
+    private fun trim(rec: Recording, start: Long, end: Long, title: String) {
+        val startInSec = start / 1000f
+        val endInSec = end / 1000f
+        val values = ContentValues(4)
+        values.put(MediaStore.Audio.Media.TITLE, title)
+        values.put(MediaStore.Audio.Media.DISPLAY_NAME, title)
+        values.put(
+            MediaStore.Audio.Media.DATE_ADDED,
+            (System.currentTimeMillis() / 1000).toInt()
+        )
+        values.put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.put(MediaStore.Audio.Media.IS_PENDING, 1)
+            values.put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/micCheck/")
+        }
+
+        val audioUri = applicationContext.contentResolver.insert(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            values
+        ) ?: return
+
+        val path = applicationContext.filesDir.absolutePath + "/$title.m4a"
+        Log.i("TRIM", "path -> $path\nstart -> $startInSec\nend -> $endInSec")
+        FFmpeg.execute("-i \"${rec.path}\" -vn -acodec copy -ss $startInSec -t $endInSec \"$path\"")
+
+        val localFile = File(path).inputStream()
+        val mediaStoreFile = applicationContext.contentResolver.openOutputStream(audioUri) ?: return
+        localFile.copyTo(mediaStoreFile)
+
+        localFile.close()
+        mediaStoreFile.close()
+
+        File(path).also {
+            if (it.exists())
+                it.delete()
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            applicationContext.contentResolver.update(
+                audioUri,
+                ContentValues().also {
+                    it.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                },
+                null, null
+            )
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            mainActivityVM.loadRecordings(applicationContext)
+            mainActivityVM.recordingsData.find { it.recordingUri == audioUri.toString() }?.let {
+                mainActivityVM.recordingsData[
+                        mainActivityVM.recordingsData.indexOf(it)
+                ] = it.copy(clipParentUri = rec.uri.toString())
+            }
+        }
+
+
+    }
+
     private val mControllerCallback = object : MediaControllerCompat.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             super.onPlaybackStateChanged(state)
@@ -569,6 +630,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     },
                     onStartPlayback = {
+                        Log.i("onStartPlayback@MainActivity", "Playing from recording.")
                         mainActivityVM.isGroupPlayback = false
                         val currGroup = it.let {
                             val recData = mainActivityVM.recordingsData.find { rec ->
@@ -646,6 +708,10 @@ class MainActivity : AppCompatActivity() {
                             mediaController.transportControls.skipToPrevious()
                         else if (it == PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
                             mediaController.transportControls.skipToNext()
+                    },
+                    onTrim = this::trim,
+                    onStopPlayback = {
+                        mediaController.transportControls.pause()
                     }
                 )
             }

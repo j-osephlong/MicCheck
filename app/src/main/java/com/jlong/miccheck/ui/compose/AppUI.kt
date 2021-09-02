@@ -46,11 +46,13 @@ fun AppUI(
     onStartPlayback: (Recording) -> Unit,
     onStartGroupPlayback: (Int, RecordingGroup) -> Unit,
     onPausePlayPlayback: () -> Unit,
+    onStopPlayback: () -> Unit,
     onSeekPlayback: (Float) -> Unit,
     onSkipPlayback: (Long) -> Unit,
     onShareRecordings: (Recording?) -> Unit,
     onChooseImage: ((Uri) -> Unit) -> Unit,
-    showDatePicker: ((Long) -> Unit) -> Unit
+    showDatePicker: ((Long) -> Unit) -> Unit,
+    onTrim: (Recording, Long, Long, String) -> Unit
 ) {
     val viewModel = viewModel<AppViewModel>()
     val context = LocalContext.current
@@ -172,6 +174,7 @@ fun AppUI(
                         recording = recording,
                         recordingData = recordingData,
                         recordingGroup = recordingGroup,
+                        clipParent = viewModel.recordings.find { it.uri.toString() == recordingData?.clipParentUri },
                         onEditFinished = { title, desc ->
                             recording?.also {
                                 viewModel.onEditRecordingDataFinished(
@@ -191,6 +194,9 @@ fun AppUI(
                         },
                         onDelete = {
                             showDeleteDialog = true
+                        },
+                        onTrim = {
+                            navController.navigate("trimRecording/" + ContentUris.parseId(recording!!.uri))
                         },
                         onAddTag = {
                             recording?.also {
@@ -215,6 +221,14 @@ fun AppUI(
                         },
                         onDeleteTimestamp = {
                             viewModel.onDeleteTimestamp(recording!!, it)
+                        },
+                        onOpenClipParent = {
+                            if (recordingData?.clipParentUri != null)
+                                navController.navigate(
+                                    "recordingInfo/" + ContentUris.parseId(
+                                        Uri.parse(recordingData.clipParentUri)
+                                    )
+                                )
                         }
                     )
 
@@ -408,6 +422,36 @@ fun AppUI(
                             it.forEach { rec ->
                                 viewModel.onAddRecordingsToGroup(group, rec)
                             }
+                        }
+                    )
+                }
+                composable("trimRecording/{uri}") { backStackEntry ->
+                    val uri =
+                        "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
+                            "uri"
+                        ) ?: "")
+                    val recording =
+                        viewModel.recordings.find { it.uri == Uri.parse(uri) } ?: Recording(
+                            Uri.EMPTY,
+                            "What a weird bug",
+                            0,
+                            0,
+                            "0",
+                            path = ""
+                        )
+                    TrimScreen(
+                        recording = recording,
+                        onPlaySelection = { start, rec ->
+                            onStartPlayback(rec)
+                            onPausePlayPlayback()
+                            onSeekPlayback(start)
+                            onPausePlayPlayback()
+                        },
+                        playbackProgress = viewModel.playbackProgress / recording.duration.toFloat(),
+                        onStopSelection = onStopPlayback,
+                        onTrim = onTrim,
+                        onExit = {
+                            navController.navigateUp()
                         }
                     )
                 }

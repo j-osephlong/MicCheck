@@ -41,20 +41,30 @@ import com.jlong.miccheck.ui.theme.MicCheckTheme
 import java.time.LocalDateTime
 import java.util.*
 
+val groupColors = listOf(
+    Color(0xfffbe9e7),
+    Color(0xffd4ffe7),
+    Color(0xffffabb5),
+    Color(0xfffffad4),
+    Color(0xffd4ddff),
+    Color(0xffdcffd4)
+)
+
 @ExperimentalMaterialApi
 @Composable
-fun GroupCard (
+fun GroupCard(
     group: RecordingGroup,
     onClick: () -> Unit,
     groupRecordings: List<Recording>
 ) {
-    Card (
+    Card(
         backgroundColor = Color(group.fallbackColor),
         shape = RoundedCornerShape(18.dp),
         elevation = 0.dp,
         onClick = onClick
     ) {
-        val textColor = if (Color(group.fallbackColor).luminance() > .65f) Color.Black else Color.White
+        val textColor =
+            if (Color(group.fallbackColor).luminance() > .5f) Color.Black else Color.White
         val painter: ImagePainter? = if (group.imgUri == null || group.imgUri == "null")
             null
         else
@@ -207,7 +217,8 @@ fun GroupScreen(
         Box (Modifier.fillMaxSize()){
             LazyColumn(
                 Modifier
-                    .fillMaxSize().align(Alignment.TopStart)
+                    .fillMaxSize()
+                    .align(Alignment.TopStart)
             ) {
                 //Image box
                 item {
@@ -321,7 +332,8 @@ fun GroupScreen(
 
             Column (
                 Modifier
-                    .fillMaxWidth().align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .align(Alignment.BottomStart)
             ) {
                 AnimatedVisibility(visible = editing, enter = slideInVertically({it}), exit = slideOutVertically({it})) {
                     Column {
@@ -408,7 +420,7 @@ fun GroupScreen(
                             },
                             colors = ButtonDefaults.buttonColors(
                                 backgroundColor = color.value,
-                                contentColor = if (color.value.luminance() > .65f) Color.Black else Color.White
+                                contentColor = if (color.value.luminance() > .5f) Color.Black else Color.White
                             ),
                             enabled = !editing,
                             shape = RoundedCornerShape(18.dp),
@@ -655,7 +667,7 @@ fun ColorChooserRow(chosenColor: Color, setColor: (Color) -> Unit, onChooseImage
                             Icons.Rounded.Check,
                             null,
                             modifier = Modifier.align(Alignment.Center),
-                            tint = MaterialTheme.colors.onSurface.copy(alpha = .65f)
+                            tint = Color.Black.copy(alpha = .65f)
                         )
                     }
                 }

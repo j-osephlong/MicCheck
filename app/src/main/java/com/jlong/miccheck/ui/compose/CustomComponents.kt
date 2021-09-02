@@ -165,6 +165,39 @@ fun ConfirmDialog(
 }
 
 @Composable
+fun MessageDialog(
+    title: String,
+    extraText: String?,
+    actionName: String,
+    visible: Boolean,
+    onClose: () -> Unit
+) {
+    if (visible)
+        AlertDialog(
+            onDismissRequest = onClose,
+            title = { Text(title) },
+            text = {
+                extraText?.also {
+                    Text(it)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(
+                        contentColor = MaterialTheme.colors.onBackground,
+                        backgroundColor = Color.Transparent
+                    )
+                ) {
+                    Text(actionName)
+                }
+            },
+            backgroundColor = MaterialTheme.colors.background,
+            shape = RoundedCornerShape(18.dp)
+        )
+}
+
+@Composable
 fun Chip(
     text: String,
     onClick: () -> Unit,

@@ -12,14 +12,9 @@ interface Searchable {
     val name: String
 }
 
-data class RecordingKey(
-    val day: Int,
-    val year: Int
-)
 
-fun Recording.toDateKey(): RecordingKey {
-    return RecordingKey(this.date.dayOfYear, this.date.year)
-}
+fun Recording.toDateKey(): Long =
+    this.date.toLocalDate().toEpochDay()
 
 data class Recording(
     val uri: Uri,
@@ -54,7 +49,21 @@ sealed class VersionedRecordingData {
         var groupUUID: String? = null,
         var groupOrderNumber: Int = -1,
         var timeStamps: List<TimeStamp> = listOf()
-    ): VersionedRecordingData()
+    ) : VersionedRecordingData()
+
+    /**
+     * V3 - Clip parent URI
+     */
+    @Serializable
+    data class V3(
+        var recordingUri: String,
+        var tags: List<Tag> = listOf(),
+        var description: String = "",
+        var groupUUID: String? = null,
+        var groupOrderNumber: Int = -1,
+        var timeStamps: List<TimeStamp> = listOf(),
+        var clipParentUri: String? = null
+    ) : VersionedRecordingData()
 }
 
 fun VersionedRecordingData.toLatestVersion(): RecordingData = when (this) {
@@ -63,7 +72,7 @@ fun VersionedRecordingData.toLatestVersion(): RecordingData = when (this) {
             recordingUri = it.recordingUri,
             tags = it.tags.let { oldTags ->
                 val newTags = mutableListOf<Tag>()
-                oldTags.forEach { tag -> newTags+=tag.toLatestVersion() }
+                oldTags.forEach { tag -> newTags += tag.toLatestVersion() }
                 newTags
             },
             description = it.description,
@@ -71,15 +80,35 @@ fun VersionedRecordingData.toLatestVersion(): RecordingData = when (this) {
             groupOrderNumber = 0,
             timeStamps = it.timeStamps.let { oldStamps ->
                 val newStamps = mutableListOf<TimeStamp>()
-                oldStamps.forEach { stamp -> newStamps+=stamp.toLatestVersion() }
+                oldStamps.forEach { stamp -> newStamps += stamp.toLatestVersion() }
                 newStamps
-            }
+            },
+            clipParentUri = null
         )
     }
-    is VersionedRecordingData.V2 -> this
+    is VersionedRecordingData.V2 -> this.let {
+        RecordingData(
+            recordingUri = it.recordingUri,
+            tags = it.tags.let { oldTags ->
+                val newTags = mutableListOf<Tag>()
+                oldTags.forEach { tag -> newTags += tag.toLatestVersion() }
+                newTags
+            },
+            description = it.description,
+            groupUUID = it.groupUUID,
+            groupOrderNumber = 0,
+            timeStamps = it.timeStamps.let { oldStamps ->
+                val newStamps = mutableListOf<TimeStamp>()
+                oldStamps.forEach { stamp -> newStamps += stamp.toLatestVersion() }
+                newStamps
+            },
+            clipParentUri = null
+        )
+    }
+    is VersionedRecordingData.V3 -> this
 }
 
-typealias RecordingData = VersionedRecordingData.V2
+typealias RecordingData = VersionedRecordingData.V3
 
 @Serializable
 sealed class VersionedRecordingGroup {
@@ -190,12 +219,3 @@ fun Pair<Recording, RecordingGroup?>.toMetaData(): Bundle =
                 this@toMetaData.second!!.fallbackColor
             )
     }
-
-val groupColors = listOf(
-    Color(0xfffbe9e7),
-    Color(0xffd4ffe7),
-    Color(0xffffabb5),
-    Color(0xfffffad4),
-    Color(0xffd4ddff),
-    Color(0xffdcffd4)
-)

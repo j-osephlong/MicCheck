@@ -121,22 +121,27 @@ fun RecordingsInfoScreen(
     recording: Recording?,
     recordingData: RecordingData?,
     recordingGroup: RecordingGroup?,
+    clipParent: Recording?,
     onPlay: () -> Unit,
     onPlayTimestamp: (Long) -> Unit,
     onEditFinished: (String, String) -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    onTrim: () -> Unit,
     onAddTag: () -> Unit,
     onDeleteTag: (Tag) -> Unit,
     onClickTag: (Tag) -> Unit,
     onClickGroupTag: () -> Unit,
-    onDeleteTimestamp: (TimeStamp) -> Unit
+    onDeleteTimestamp: (TimeStamp) -> Unit,
+    onOpenClipParent: () -> Unit
 ) {
     val (titleText, setTitleText) = remember { mutableStateOf(recording?.name ?: "") }
     val (descText, setDescText) = remember { mutableStateOf(recordingData?.description ?: "") }
     var editing by remember { mutableStateOf(false) }
+    var showPathDialog by remember { mutableStateOf(false) }
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-        Column (Modifier.fillMaxSize()){
+        Column(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(18.dp))
                 Crossfade(targetState = editing, modifier = Modifier.animateContentSize()) {
@@ -272,7 +277,7 @@ fun RecordingsInfoScreen(
                                 color = MaterialTheme.colors.onBackground.copy(alpha = .65f),
                                 modifier = Modifier.weight(1f)
                             )
-                            IconButton(onClick = { /*TODO*/ }) {
+                            IconButton(onClick = { showPathDialog = true }) {
                                 Icon(
                                     Icons.Rounded.Info,
                                     "Info",
@@ -282,6 +287,31 @@ fun RecordingsInfoScreen(
                             }
                         }
                     }
+                    if (clipParent != null)
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .padding(18.dp, 8.dp)
+                                    .fillMaxWidth()
+                            ) {
+                                Text(
+                                    "Clipped from \"${clipParent.name}\"",
+                                    style = TextStyle(fontStyle = FontStyle.Italic),
+                                    color = MaterialTheme.colors.onBackground.copy(alpha = .65f),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = onOpenClipParent) {
+                                    Icon(
+                                        Icons.Rounded.Launch,
+                                        "Info",
+                                        tint = MaterialTheme.colors.onBackground.copy(alpha = .65f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                 }
                 Column (
                     Modifier
@@ -303,20 +333,38 @@ fun RecordingsInfoScreen(
                                 disabledBackgroundColor = Color.Transparent)) {
                             Text ("Delete")
                         }
-                        TextButton(onClick = onShare, enabled = !editing,
+                        TextButton(
+                            onClick = onShare, enabled = !editing,
                             colors = ButtonDefaults.buttonColors(
                                 contentColor = MaterialTheme.colors.onBackground,
                                 disabledContentColor = MaterialTheme.colors.onBackground.copy(
                                     alpha = .5f
                                 ),
                                 backgroundColor = Color.Transparent,
-                                disabledBackgroundColor = Color.Transparent)) {
-                            Text ("Share")
+                                disabledBackgroundColor = Color.Transparent
+                            )
+                        ) {
+                            Text("Share")
                         }
-                        TextButton(onClick = {
-                            editing = if (editing) {
-                                onEditFinished(titleText, descText); false
-                            } else true },
+                        TextButton(
+                            onClick = onTrim, enabled = !editing,
+                            colors = ButtonDefaults.buttonColors(
+                                contentColor = MaterialTheme.colors.onBackground,
+                                disabledContentColor = MaterialTheme.colors.onBackground.copy(
+                                    alpha = .5f
+                                ),
+                                backgroundColor = Color.Transparent,
+                                disabledBackgroundColor = Color.Transparent
+                            )
+                        ) {
+                            Text("Trim")
+                        }
+                        TextButton(
+                            onClick = {
+                                editing = if (editing) {
+                                    onEditFinished(titleText, descText); false
+                                } else true
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 contentColor = MaterialTheme.colors.onBackground,
                                 disabledContentColor = MaterialTheme.colors.onBackground.copy(
@@ -343,7 +391,7 @@ fun RecordingsInfoScreen(
                             shape = RoundedCornerShape(18.dp),
                             border = BorderStroke(0.dp, Color.Unspecified)
                         ) {
-                            Text ("Play")
+                            Text("Play")
                         }
                     }
                 }
@@ -351,6 +399,17 @@ fun RecordingsInfoScreen(
             }
         }
 
+    }
+
+    MessageDialog(
+        title = "Where is my recording?",
+        extraText = "You can find your recordings at the path specified " +
+                "by using a file explorer app or by plugging your phone into " +
+                "a computer.",
+        actionName = "Okay",
+        visible = showPathDialog
+    ) {
+        showPathDialog = false
     }
 }
 
@@ -684,6 +743,7 @@ fun InfoPreview() {
 
                 ),
                 recordingGroup = null,
+                clipParent = null,
                 onEditFinished = { _, _ -> },
                 onPlay = { },
                 onDelete = { },
@@ -693,7 +753,9 @@ fun InfoPreview() {
                 onClickGroupTag = {},
                 onPlayTimestamp = { },
                 onDeleteTimestamp = { },
-                onShare = { }
+                onShare = { },
+                onTrim = {},
+                onOpenClipParent = {}
             )
         }
     }
