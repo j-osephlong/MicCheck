@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.google.accompanist.navigation.animation.AnimatedNavHost
@@ -32,7 +31,68 @@ import com.jlong.miccheck.*
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 import kotlinx.coroutines.launch
 
+enum class NavDest(val route: String) {
+    RecordingsScreen("recordingsScreen") {
+        /**
+         * @param arg No arguments
+         */
+        override fun routeTo(vararg arg: Any?) = "recordingsScreen"
+    },
+    RecordingInfoScreen("recordingInfo/{uri}") {
+        /**
+         * @param arg Recording [Uri]
+         */
+        override fun routeTo(vararg arg: Any?) =
+            "recordingInfo/${ContentUris.parseId(arg[0] as Uri)}"
+    },
+    AddTagScreen("addTag/{uri}") {
+        /**
+         * @param arg Recording [Uri?]
+         */
+        override fun routeTo(vararg arg: Any?) =
+            "addTag/${(arg[0] as Uri?)?.let { ContentUris.parseId(it) } ?: "null"}"
+    },
+    SearchScreen("search") {
+        /**
+         * @param arg No arguments
+         */
+        override fun routeTo(vararg arg: Any? /*No arguments*/) = "search"
+    },
+    SelectTagScreen("selectTag") {
+        /**
+         * @param arg No arguments
+         */
+        override fun routeTo(vararg arg: Any? /*No arguments*/) = "selectTag"
+    },
+    AddTimestampScreen("addTimestamp/{uri}/{timeMilli}") {
+        /**
+         * @param arg (1) Recording [Uri] (2) Timestamp Milli [Long]
+         */
+        override fun routeTo(vararg arg: Any? /*Must provide Uri and Long*/) =
+            "addTimestamp/${ContentUris.parseId(arg[0] as Uri)}/${arg[1] as Long}"
+    },
+    NewGroupScreen("newGroup") {
+        override fun routeTo(vararg arg: Any? /*No arguments*/) = "newGroup"
+    },
+    SelectGroupScreen("selectGroup/{uri}") {
+        override fun routeTo(vararg arg: Any? /*Must be a uri*/) =
+            "selectGroup/${(arg[0] as Uri?)?.let { ContentUris.parseId(it) } ?: "null"}"
+    },
+    GroupScreen("group/{uuid}") {
+        override fun routeTo(vararg arg: Any? /*Must be a uuid string*/) =
+            "group/${arg[0] as String}"
+    },
+    SelectRecordingsScreen("selectRecordings/{uuid}") {
+        override fun routeTo(vararg arg: Any? /*Must be a uuid string*/) =
+            "selectRecordings/${arg[0] as String}"
+    },
+    TrimScreen("trimRecording/{uri}") {
+        override fun routeTo(vararg arg: Any? /*Must be a uri*/) =
+            "trimRecording/${ContentUris.parseId(arg[0] as Uri)}"
+    };
 
+    abstract fun routeTo(vararg arg: Any?): String
+}
 
 @ExperimentalPagerApi
 @ExperimentalFoundationApi
@@ -40,6 +100,7 @@ import kotlinx.coroutines.launch
 @ExperimentalAnimationApi
 @Composable
 fun AppUI(
+    viewModel: AppViewModel,
     onStartRecord: () -> Unit,
     onPausePlayRecord: () -> Unit,
     onStopRecord: () -> Unit,
@@ -52,9 +113,9 @@ fun AppUI(
     onShareRecordings: (Recording?) -> Unit,
     onChooseImage: ((Uri) -> Unit) -> Unit,
     showDatePicker: ((Long) -> Unit) -> Unit,
-    onTrim: (Recording, Long, Long, String) -> Unit
+    onTrim: (Recording, Long, Long, String) -> Unit,
+    onSetPlaybackSpeed: (Float) -> Unit
 ) {
-    val viewModel = viewModel<AppViewModel>()
     val context = LocalContext.current
 
     val navController = rememberAnimatedNavController()
@@ -67,6 +128,7 @@ fun AppUI(
         )
     var selectedSearchTagFilter by remember { mutableStateOf<Tag?>(null) }
     val recordingsScreenPager = rememberPagerState(pageCount = 2)
+    var showPlaybackSpeedDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(key1 = backdropScaffoldState.isRevealed) {
         backdropOpen = backdropScaffoldState.isRevealed
@@ -101,25 +163,26 @@ fun AppUI(
                 onOpenSearch = { navController.navigate("search") },
                 onShareRecordings = { onShareRecordings(null) },
                 onCreateGroup = {
-                    navController.navigate("newGroup")
+                    navController.navigate(NavDest.NewGroupScreen.routeTo())
                 },
                 onAddRecordingsToGroup = {
-                    navController.navigate("selectGroup/" + "null")
+                    navController.navigate(NavDest.SelectGroupScreen.routeTo(null))
                 },
                 onTag = {
-                    navController.navigate("addTag/" + "null")
+                    navController.navigate(NavDest.AddTagScreen.routeTo(null))
                 },
                 onDeleteRecordings = { viewModel.onDeleteRecordings(context) },
                 onClearSelected = { viewModel.selectedRecordings.removeAll(viewModel.selectedRecordings) },
                 setBackdropOpen = setBackdropOpen,
-                backdropOpen = backdropOpen
+                backdropOpen = backdropOpen,
+                onShowPlaybackSpeedDialog = { showPlaybackSpeedDialog = true }
             )
         },
         frontLayerContent =
         {
             AnimatedNavHost(
                 navController = navController,
-                startDestination = "recordingsScreen",
+                startDestination = NavDest.RecordingsScreen.route,
                 enterTransition = { _, _ ->
                     slideInHorizontally(initialOffsetX = { 2000 })
                 },
@@ -130,7 +193,7 @@ fun AppUI(
                     slideInHorizontally(initialOffsetX = { -2000 })
                 }
             ) {
-                composable("recordingsScreen") {
+                composable(NavDest.RecordingsScreen.route) {
                     RecordingsScreen(
                         pageState = recordingsScreenPager,
                         recordings = viewModel.recordings,
@@ -144,20 +207,23 @@ fun AppUI(
                         onOpenPlayback = { viewModel.onSetBackdrop(1); setBackdropOpen(true) },
                         onOpenRecord = { viewModel.onSetBackdrop(0); setBackdropOpen(true) },
                         onOpenRecordingInfo = { recording ->
-                            navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                            navController.navigate(NavDest.RecordingInfoScreen.routeTo(recording.uri))
                         },
                         onClickTag = {
                             selectedSearchTagFilter = it
-                            navController.navigate("search")
+                            navController.navigate(NavDest.SearchScreen.routeTo())
                         },
                         onClearSelected = { viewModel.selectedRecordings.removeAll(viewModel.selectedRecordings) },
                         onOpenGroup = { group ->
-                            navController.navigate("group/" + group.uuid)
+                            navController.navigate(NavDest.GroupScreen.routeTo(group.uuid))
                         },
-                        showDatePicker = showDatePicker
+                        showDatePicker = showDatePicker,
+                        onCreateGroup = {
+                            navController.navigate(NavDest.NewGroupScreen.routeTo())
+                        }
                     )
                 }
-                composable("recordingInfo/{uri}") { backStackEntry ->
+                composable(NavDest.RecordingInfoScreen.route) { backStackEntry ->
                     val uri =
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
@@ -196,11 +262,11 @@ fun AppUI(
                             showDeleteDialog = true
                         },
                         onTrim = {
-                            navController.navigate("trimRecording/" + ContentUris.parseId(recording!!.uri))
+                            navController.navigate(NavDest.TrimScreen.routeTo(recording!!.uri))
                         },
                         onAddTag = {
                             recording?.also {
-                                navController.navigate("addTag/" + ContentUris.parseId(it.uri))
+                                navController.navigate(NavDest.AddTagScreen.routeTo(recording.uri))
                             }
                         },
                         onDeleteTag = {
@@ -208,11 +274,11 @@ fun AppUI(
                         },
                         onClickTag = {
                             selectedSearchTagFilter = it
-                            navController.navigate("search")
+                            navController.navigate(NavDest.SearchScreen.routeTo())
                         },
                         onClickGroupTag = {
                             if (recordingGroup != null)
-                                navController.navigate("group/" + recordingGroup.uuid)
+                                navController.navigate(NavDest.GroupScreen.routeTo(recordingGroup.uuid))
                         },
                         onPlayTimestamp = { time ->
                             onStartPlayback(recording!!)
@@ -225,8 +291,10 @@ fun AppUI(
                         onOpenClipParent = {
                             if (recordingData?.clipParentUri != null)
                                 navController.navigate(
-                                    "recordingInfo/" + ContentUris.parseId(
-                                        Uri.parse(recordingData.clipParentUri)
+                                    NavDest.RecordingInfoScreen.routeTo(
+                                        Uri.parse(
+                                            recordingData.clipParentUri
+                                        )
                                     )
                                 )
                         }
@@ -246,13 +314,17 @@ fun AppUI(
                         }
                     }
                 }
-                composable("addTag/{uri}") { backStackEntry ->
+                composable(NavDest.AddTagScreen.route) { backStackEntry ->
                     val uri =
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
                         ) ?: "")
                     val recording =
-                        if (uri == "null") null else viewModel.recordings.find { it.uri == Uri.parse(uri) }
+                        if (uri == "null") null else viewModel.recordings.find {
+                            it.uri == Uri.parse(
+                                uri
+                            )
+                        }
                     val recordingData = if (recording == null) null else
                         viewModel.recordingsData.find { it.recordingUri == recording.uri.toString() }
 
@@ -267,18 +339,18 @@ fun AppUI(
                         recordingData = recordingData,
                     )
                 }
-                composable("search") {
+                composable(NavDest.SearchScreen.route) {
                     SearchScreen(
                         recordings = viewModel.recordings,
                         recordingsData = viewModel.recordingsData,
                         groups = viewModel.groups,
                         tagFilter = selectedSearchTagFilter,
                         onOpenRecordingInfo = { recording ->
-                            navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                            navController.navigate(NavDest.RecordingInfoScreen.routeTo(recording.uri))
                         },
                         onStartPlayback = onStartPlayback,
                         onOpenPlayback = { viewModel.onSetBackdrop(1); setBackdropOpen(true) },
-                        onOpenSelectTag = { navController.navigate("selectTag") },
+                        onOpenSelectTag = { navController.navigate(NavDest.SelectTagScreen.routeTo()) },
                         onRemoveTagFilter = { selectedSearchTagFilter = null },
                         onOpenTimeStamp = { rec, timeStamp ->
                             onStartPlayback(rec)
@@ -286,19 +358,19 @@ fun AppUI(
                             setBackdropOpen(true)
                         },
                         onOpenGroup = { group ->
-                            navController.navigate("group/" + group.uuid)
+                            navController.navigate(NavDest.GroupScreen.routeTo(group.uuid))
                         }
                     )
                 }
-                composable("selectTag") {
+                composable(NavDest.SelectTagScreen.route) {
                     TagSelectScreen(
                         tags = viewModel.tags,
                         onSelectTag = {
-                        navController.navigateUp()
-                        selectedSearchTagFilter = it
-                    })
+                            navController.navigateUp()
+                            selectedSearchTagFilter = it
+                        })
                 }
-                composable("addTimestamp/{uri}/{timeMilli}") { backStackEntry ->
+                composable(NavDest.AddTimestampScreen.route) { backStackEntry ->
                     val uri =
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
@@ -316,7 +388,7 @@ fun AppUI(
                         setBackdropOpen(true)
                     })
                 }
-                composable("newGroup") {
+                composable(NavDest.NewGroupScreen.route) {
                     NewGroupScreen(
                         onCreate = { name, uri, color ->
                             if (name.isNotEmpty()) {
@@ -327,34 +399,38 @@ fun AppUI(
                         onChooseImage = onChooseImage
                     )
                 }
-                composable("selectGroup/{uri}") { backStackEntry ->
+                composable(NavDest.SelectGroupScreen.route) { backStackEntry ->
                     val uri =
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
                         ) ?: "")
                     val recording =
-                        if (uri == "null") null else viewModel.recordings.find { it.uri == Uri.parse(uri) }
+                        if (uri == "null") null else viewModel.recordings.find {
+                            it.uri == Uri.parse(
+                                uri
+                            )
+                        }
 
                     SelectGroupScreen(
                         groups = viewModel.groups,
                         recordingsData = viewModel.recordingsData,
                         onSelect = {
-                            viewModel.onAddRecordingsToGroup(it, recording)
+                            viewModel.onAddRecordingsToGroup(context, it, recording)
                             viewModel.selectedRecordings.removeAll(viewModel.selectedRecordings)
                             navController.navigateUp()
-                            navController.navigate("group/" + it.uuid)
+                            navController.navigate(NavDest.GroupScreen.routeTo(it.uuid))
                         },
                         recordings = viewModel.recordings
                     )
                 }
-                composable("group/{uuid}") { backStackEntry ->
+                composable(NavDest.GroupScreen.route) { backStackEntry ->
                     val uuid =
                         (backStackEntry.arguments?.getString(
                             "uuid"
                         ) ?: "")
                     val group = viewModel.groups.find { it.uuid == uuid }
                     if (group == null) {
-                        navController.navigate("recordingsScreen")
+                        navController.navigate(NavDest.RecordingsScreen.routeTo())
                         return@composable
                     }
                     val recData = viewModel.recordingsData.filter { it.groupUUID == uuid }
@@ -367,7 +443,7 @@ fun AppUI(
                         groupRecordings = recs.sortedBy { rec -> recData.find { it.recordingUri == rec.uri.toString() }!!.groupOrderNumber },
                         groupRecordingsData = recData,
                         onOpenRecordingInfo = { recording ->
-                            navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                            navController.navigate(NavDest.RecordingInfoScreen.routeTo(recording.uri))
                         },
                         onPlayRecording = { rec ->
                             onStartGroupPlayback(recData.find {it.recordingUri == rec.uri.toString()}!!.groupOrderNumber, group)
@@ -377,13 +453,13 @@ fun AppUI(
                         currentlyPlayingRec = viewModel.currentPlaybackRec,
                         onClickTag = {
                             selectedSearchTagFilter = it
-                            navController.navigate("search")
+                            navController.navigate(NavDest.SearchScreen.routeTo())
                         },
                         onDeleteGroup = {
                             showDeleteDialog = true
                         },
                         onAddRecordings = {
-                            navController.navigate("selectRecordings/"+group.uuid)
+                            navController.navigate(NavDest.SelectRecordingsScreen.routeTo(group.uuid))
                         },
                         onChooseImage = onChooseImage,
                         onSaveEdit = viewModel::onEditGroup,
@@ -402,7 +478,7 @@ fun AppUI(
                         viewModel.onDeleteGroup(group)
                     }
                 }
-                composable("selectRecordings/{uuid}") { backStackEntry ->
+                composable(NavDest.SelectRecordingsScreen.route) { backStackEntry ->
                     val uuid =
                         (backStackEntry.arguments?.getString(
                             "uuid"
@@ -410,9 +486,9 @@ fun AppUI(
                     val group = viewModel.groups.find { it.uuid == uuid }!!
 
                     val filteredRecData = viewModel.recordingsData
-                        //.filter {it.groupUUID != uuid}
+                    //.filter {it.groupUUID != uuid}
                     val filteredRecordings = viewModel.recordings
-                        //.filter {rec -> filteredRecData.find {it.recordingUri == rec.uri.toString()} != null }
+                    //.filter {rec -> filteredRecData.find {it.recordingUri == rec.uri.toString()} != null }
                     SelectRecordingsScreen(
                         recordings = filteredRecordings,
                         recordingsData = filteredRecData,
@@ -420,12 +496,12 @@ fun AppUI(
                         onDone = {
                             navController.navigateUp()
                             it.forEach { rec ->
-                                viewModel.onAddRecordingsToGroup(group, rec)
+                                viewModel.onAddRecordingsToGroup(context, group, rec)
                             }
                         }
                     )
                 }
-                composable("trimRecording/{uri}") { backStackEntry ->
+                composable(NavDest.TrimScreen.route) { backStackEntry ->
                     val uri =
                         "content://media/external/audio/media/" + (backStackEntry.arguments?.getString(
                             "uri"
@@ -492,16 +568,22 @@ fun AppUI(
                 onSeekPlayback = onSeekPlayback,
                 onSkipPlayback = onSkipPlayback,
                 onOpenRecordingInfo = { recording ->
-                    navController.navigate("recordingInfo/" + ContentUris.parseId(recording.uri))
+                    navController.navigate(NavDest.RecordingInfoScreen.routeTo(recording.uri))
                     setBackdropOpen(false)
                 },
                 onAddRecordingTimestamp = { rec, time ->
-                    navController.navigate("addTimestamp/" + ContentUris.parseId(rec.uri) + "/" + time.toString())
+                    navController.navigate(NavDest.AddTimestampScreen.routeTo(rec.uri, time))
                     setBackdropOpen(false)
                 },
                 isGroupPlayback = viewModel.isGroupPlayback
             )
         }
+    )
+
+    PlaybackSpeedDialog(
+        visible = showPlaybackSpeedDialog,
+        onExit = { showPlaybackSpeedDialog = false },
+        onPositive = { showPlaybackSpeedDialog = false; onSetPlaybackSpeed(it) }
     )
 }
 
@@ -597,6 +679,7 @@ fun TopBar(
     onAddRecordingsToGroup: () -> Unit,
     onTag: () -> Unit,
     onClearSelected: () -> Unit,
+    onShowPlaybackSpeedDialog: () -> Unit,
     setBackdropOpen: (Boolean) -> Unit,
     backdropOpen: Boolean
 ) {
@@ -674,6 +757,22 @@ fun TopBar(
                                 Icons.Rounded.MoreVert,
                                 contentDescription = "Options"
                             )
+                            DropdownMenu(
+                                expanded = moreMenuExpanded,
+                                onDismissRequest = { moreMenuExpanded = false },
+                            ) {
+                                DropdownMenuItem(onClick = {
+                                    moreMenuExpanded = false
+                                    onShowPlaybackSpeedDialog()
+                                }) {
+                                    Text("Playback speed")
+                                }
+                                DropdownMenuItem(onClick = {
+                                    moreMenuExpanded = false
+                                }) {
+                                    Text("About")
+                                }
+                            }
                         }
                     }
                 } else {
@@ -694,22 +793,6 @@ fun TopBar(
                         IconButton({ showDeleteDialog = true }) {
                             Icon(Icons.Rounded.Delete, "Delete")
                         }
-                    }
-                }
-
-                DropdownMenu(
-                    expanded = moreMenuExpanded,
-                    onDismissRequest = { moreMenuExpanded = false },
-                ) {
-                    DropdownMenuItem(onClick = {
-                        moreMenuExpanded = false
-                    }) {
-                        Text("Temp Item")
-                    }
-                    DropdownMenuItem(onClick = {
-                        moreMenuExpanded = false
-                    }) {
-                        Text("Temp Item")
                     }
                 }
             }
@@ -742,7 +825,7 @@ fun BackdropPreview() {
     MicCheckTheme {
         Surface {
             Backdrop(
-                selectedBackdrop = 1,
+                selectedBackdrop = 0,
                 onSelectBackdrop = {},
                 onStartRecord = { /*TODO*/ },
                 onPausePlayRecord = { /*TODO*/ },
@@ -756,7 +839,7 @@ fun BackdropPreview() {
                 currentPlaybackRec = Recording(
                     Uri.EMPTY,
                     "New Recording New Recording New",
-                    0,
+                    1,
                     0,
                     "0B",
                     path = ""
@@ -777,63 +860,30 @@ fun BackdropPreview() {
         }
     }
 }
-//
-//@ExperimentalFoundationApi
-//@ExperimentalMaterialApi
+
 //@ExperimentalAnimationApi
+//@ExperimentalMaterialApi
+//@ExperimentalFoundationApi
+//@ExperimentalPagerApi
 //@Preview
 //@Composable
-//fun MainScreenPreview() {
-//    var sel by remember {
-//        mutableStateOf(0)
-//    }
-//    val onSelectScreen: (Int) -> Unit = {
-//        sel = it
-//    }
-//    var selB by remember {
-//        mutableStateOf(0)
-//    }
-//    val onSelectBackdrop: (Int) -> Unit = {
-//        selB = it
-//    }
-//    var recording by remember {
-//        mutableStateOf(RecordingState.WAITING)
-//    }
-//
-//    MicCheckTheme {
-//        Surface {
-//            AppUI(
-//                recordings = listOf(
-//                    Recording(
-//                        Uri.EMPTY, "Placeholder 1", 150000, 0, "0B",
-//                        date = LocalDateTime.now().plusDays(1)
-//                    ),
-//                    Recording(Uri.parse("file:///tmp/android.txt"), "Placeholder 2", 0, 0, "0B"),
-//                    Recording(Uri.parse("file:///tmp/android2.txt"), "Placeholder 3", 0, 0, "0B"),
-//                ),
-//                recordingsData = listOf(
-//                    RecordingData(Uri.EMPTY.toString()),
-//                    RecordingData(Uri.parse("file:///tmp/android.txt").toString()),
-//                    RecordingData(Uri.parse("file:///tmp/android2.txt").toString()),
-//                ),
-//                tags = listOf(),
-//                recordingState = recording,
-//                currentPlaybackRec = null,
-//                playbackState = PlaybackStateCompat.STATE_NONE,
-//                playbackProgress = 0,
-//                onStartRecord = { recording = RecordingState.RECORDING },
-//                onPausePlayRecord = { },
-//                onStopRecord = { recording = RecordingState.WAITING },
-//                onFinishedRecording = { _, _ -> },
-//                onStartPlayback = { /*TODO*/ },
-//                onPausePlayPlayback = { /*TODO*/ },
-//                onSeekPlayback = { },
-//                onEditFinished = { _, _, _ -> },
-//                onAddRecordingTag = { _, _ -> },
-//                onDeleteRecording = { },
-//                onSelectBackdrop = onSelectBackdrop,
-//                selectedBackdrop = selB
-//            )
-//        }
+//fun AppUIPreview() {
+//    MicCheckTheme() {
+//        AppUI(
+//            viewModel = AppViewModel(),
+//            onStartRecord = { /*TODO*/ },
+//            onPausePlayRecord = { /*TODO*/ },
+//            onStopRecord = { /*TODO*/ },
+//            onStartPlayback = {},
+//            onStartGroupPlayback = {_, _, ->},
+//            onPausePlayPlayback = { /*TODO*/ },
+//            onStopPlayback = { /*TODO*/ },
+//            onSeekPlayback = { _ ->},
+//            onSkipPlayback = {},
+//            onShareRecordings = {},
+//            onChooseImage = {},
+//            showDatePicker = {},
+//            onTrim = {_, _, _, _->}
+//        )
 //    }
 //}

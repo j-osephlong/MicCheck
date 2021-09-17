@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.*
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
 import java.io.IOException
 
 enum class RecorderActions {
@@ -37,11 +38,14 @@ class RecorderService : Service() {
     var recordTimeHandler: Handler? = null
     var recordTime: Long = 0
 
+    var sampleRate: Int = 0
+    var encodingBitRate: Int = 0
+
     @SuppressLint("HandlerLeak")
     inner class IncomingHandler : Handler(Looper.myLooper()!!) {
         override fun handleMessage(msg: Message) {
             when (msg.obj as RecorderActions) {
-                RecorderActions.START -> onStartRecord()
+                RecorderActions.START -> onStartRecord(msg.data)
                 RecorderActions.PAUSE -> onPause()
                 RecorderActions.RESUME -> onResume()
                 RecorderActions.STOP -> onStopRecord()
@@ -65,13 +69,29 @@ class RecorderService : Service() {
         mServiceMessenger = Messenger(IncomingHandler())
     }
 
-    fun onStartRecord() {
+    fun onStartRecord(params: Bundle) {
         val uri = createRecordingFile()
-        if (recorder == null)
-            prepareRecorder()
-        else {
-            recorder!!.reset()
+        val failToast: () -> Unit = {
+            Toast.makeText(
+                applicationContext,
+                "Could not start recording - are you on a call?",
+                Toast.LENGTH_LONG
+            ).show()
         }
+
+        if (uri == null) {
+            failToast()
+            return
+        }
+        sampleRate = params.getInt("sampleRate")
+        encodingBitRate = params.getInt("encodingBitRate")
+        if (recorder == null)
+            if (!prepareRecorder()) {
+                failToast()
+                return
+            } else {
+                recorder!!.reset()
+            }
         recorder!!.start()
 
         val lMsg = Message().apply {
@@ -152,7 +172,7 @@ class RecorderService : Service() {
             release()
         }
         recorder = null
-        currentOutputFile!!.close()
+        currentOutputFile?.close()
         currentOutputFile = null
 
         stopForeground(true)
@@ -169,24 +189,26 @@ class RecorderService : Service() {
 
     }
 
-    private fun prepareRecorder() {
+    private fun prepareRecorder(): Boolean {
         recorder = MediaRecorder().apply {
             setAudioSource(MediaRecorder.AudioSource.DEFAULT)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioEncodingBitRate(16 * 44100)
-            setAudioSamplingRate(44100)
+            setAudioEncodingBitRate(encodingBitRate)
+            setAudioSamplingRate(sampleRate)
             setOutputFile(currentOutputFile!!.fileDescriptor)
 
             try {
                 prepare()
             } catch (e: IOException) {
                 Log.e("MicCheck", "prepare() failed")
+                return@prepareRecorder false
             }
         }
+        return true
     }
 
-    private fun createRecordingFile(): Uri {
+    private fun createRecordingFile(): Uri? {
         val values = ContentValues(4)
         values.put(MediaStore.Audio.Media.TITLE, "Untitled Recording")
         values.put(
@@ -201,8 +223,9 @@ class RecorderService : Service() {
         val audioUri = applicationContext.contentResolver.insert(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             values
-        )
-        currentOutputFile = applicationContext.contentResolver.openFileDescriptor(audioUri!!, "w")
+        ) ?: return null
+
+        currentOutputFile = applicationContext.contentResolver.openFileDescriptor(audioUri, "w")
 
         return audioUri
     }
@@ -234,7 +257,6 @@ class RecorderService : Service() {
             .setContentIntent(pendingIntent)
             .build()
 
-// Notification ID cannot be 0.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) startForeground(
             notificationId,
             notification!!, FOREGROUND_SERVICE_TYPE_MICROPHONE

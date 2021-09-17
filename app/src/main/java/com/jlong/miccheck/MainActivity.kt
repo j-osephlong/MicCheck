@@ -34,6 +34,7 @@ import com.arthenica.mobileffmpeg.FFmpeg
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jlong.miccheck.ui.compose.AppUI
+import com.jlong.miccheck.ui.compose.FirstLaunchScreen
 import com.jlong.miccheck.ui.compose.StatusBarColor
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +57,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var imageResultLauncher: ActivityResultLauncher<Intent>
     private var currentImageCallback: ((Uri) -> Unit)? = null
+
+    private lateinit var dirResultLauncher: ActivityResultLauncher<Intent>
+    private var currentDirCallback: ((Uri) -> Unit)? = null
 
     @ExperimentalPagerApi
     @ExperimentalFoundationApi
@@ -108,12 +112,12 @@ class MainActivity : AppCompatActivity() {
          */
         mainActivityVM.serializeAndSave = this@MainActivity::serializeAndSaveData
         mainActivityVM.requestFilePermission = this@MainActivity::requestFilePermission
+        loadSettings()
         loadData()
         CoroutineScope(Dispatchers.IO).launch {
             mainActivityVM.loadRecordings(applicationContext)
             verifyData()
         }
-        loadSettings()
 
         /**
          * #2
@@ -144,10 +148,11 @@ class MainActivity : AppCompatActivity() {
 
         /**
          * #6
-         * Setup image chooser &
+         * Setup image chooser, dir chooser &
          * Create compose UI with callbacks
          */
         imageResultLauncher = setupImageChooser()
+        dirResultLauncher = setupDirChooser()
 
         setContent {
             App()
@@ -304,12 +309,8 @@ class MainActivity : AppCompatActivity() {
             } == null
         }
 
-        mainActivityVM.groups.removeIf { group ->
-            mainActivityVM.recordingsData.find { it.groupUUID == group.uuid} == null
-        }
-
         mainActivityVM.groups.forEach {
-            mainActivityVM.orderGroup(it)
+            mainActivityVM.orderGroup(applicationContext, it)
             it.imgUri?.let { uri ->
                 val file = File(applicationContext.filesDir, Uri.parse(uri).lastPathSegment ?: return@let)
                 if (!file.exists())
@@ -331,7 +332,17 @@ class MainActivity : AppCompatActivity() {
                 groups = mainActivityVM.groups.toList() as List<VersionedRecordingGroup>
             )
         )
+        var dirUri: Uri? = null
+        onChooseDir { dirUri = it }
+        dirUri?.also {
+            contentResolver.openOutputStream(it)?.apply {
+                write(packagedData.toByteArray())
+                close()
+            }
+        }
+    }
 
+    fun importData() {
 
     }
     //endregion
@@ -436,6 +447,27 @@ class MainActivity : AppCompatActivity() {
         imageResultLauncher.launch(intent)
     }
     //endregion
+
+    private fun setupDirChooser() =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.data?.also { uri ->
+                    currentDirCallback?.invoke(uri)
+                    currentDirCallback = null
+                }
+            }
+        }
+
+    private fun onChooseDir(callback: (Uri) -> Unit) {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "micCheckExportedData.json")
+        }
+
+        currentDirCallback = callback
+        dirResultLauncher.launch(intent)
+    }
 
     private fun trim(rec: Recording, start: Long, end: Long, title: String) {
         val startInSec = start / 1000f
@@ -563,6 +595,10 @@ class MainActivity : AppCompatActivity() {
             fun onStartRecord() {
                 val msg = Message().apply {
                     obj = RecorderActions.START
+                    data = Bundle().apply {
+                        putInt("sampleRate", mainActivityVM.settings.sampleRate)
+                        putInt("encodingBitRate", mainActivityVM.settings.encodingBitRate)
+                    }
                 }
                 mServiceMessenger?.apply {
                     send(msg)
@@ -619,101 +655,127 @@ class MainActivity : AppCompatActivity() {
         val coroutineScope = rememberCoroutineScope()
 
         MicCheckTheme {
-            StatusBarColor()
-            Surface {
-                AppUI(
-                    onStartRecord = { recorderClient.onStartRecord() },
-                    onPausePlayRecord = { recorderClient.onPausePlayRecord() },
-                    onStopRecord = {
-                        coroutineScope.launch {
-                            recorderClient.onStopRecord()
-                        }
-                    },
-                    onStartPlayback = {
-                        Log.i("onStartPlayback@MainActivity", "Playing from recording.")
-                        mainActivityVM.isGroupPlayback = false
-                        val currGroup = it.let {
-                            val recData = mainActivityVM.recordingsData.find { rec ->
-                                rec.recordingUri == it.uri.toString()
+            if (mainActivityVM.settings.firstLaunch)
+                FirstLaunchScreen {
+                    mainActivityVM.settings = mainActivityVM.settings.copy(firstLaunch = false)
+                    coroutineScope.launch { serializeAndSaveData() }
+                }
+            else {
+                StatusBarColor()
+                Surface {
+                    AppUI(
+                        viewModel = mainActivityVM,
+                        onStartRecord = { recorderClient.onStartRecord() },
+                        onPausePlayRecord = { recorderClient.onPausePlayRecord() },
+                        onStopRecord = {
+                            coroutineScope.launch {
+                                recorderClient.onStopRecord()
                             }
-                            mainActivityVM.groups.find { group ->
-                                group.uuid == recData?.groupUUID
-                            }
-                        }
-
-                        mediaController.transportControls.playFromUri(
-                            it.uri,
-                            Pair(it, currGroup).toMetaData()
-                        )
-                        mainActivityVM.onSetBackdrop(1)
-                    },
-                    onPausePlayPlayback = {
-                        val currGroup = mainActivityVM.currentPlaybackRec.let {
-                            val recData = if (it == null)
-                                null
-                            else {
-                                mainActivityVM.recordingsData.find { rec ->
+                        },
+                        onStartPlayback = {
+                            Log.i("onStartPlayback@MainActivity", "Playing from recording.")
+                            mainActivityVM.isGroupPlayback = false
+                            val currGroup = it.let {
+                                val recData = mainActivityVM.recordingsData.find { rec ->
                                     rec.recordingUri == it.uri.toString()
                                 }
-                            }
-                            mainActivityVM.groups.find { group ->
-                                group.uuid == recData?.groupUUID
-                            }
-                        }
-
-                        if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PLAYING)
-                            mediaController.transportControls.pause()
-                        else if ((mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PAUSED ||
-                                    mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_STOPPED) &&
-                            mainActivityVM.currentPlaybackRec != null
-                        )
-                            mediaController.transportControls.playFromUri(mainActivityVM.currentPlaybackRec!!.uri,
-                                Pair(mainActivityVM.currentPlaybackRec!!, currGroup).toMetaData()
-                            )
-                    },
-                    onSeekPlayback = {
-                        mediaController.transportControls.seekTo(
-                            (it * (mainActivityVM.currentPlaybackRec?.duration ?: 0)).toLong()
-                        )
-                    },
-                    onShareRecordings = { onShareAsAudio(it) },
-                    onChooseImage = this::onChooseImage,
-                    onStartGroupPlayback = { index, group ->
-                        mainActivityVM.isGroupPlayback = true
-                        val recsData = mainActivityVM.recordingsData.filter { it.groupUUID == group.uuid }
-
-                        val recs = mainActivityVM.recordings.filter { rec ->
-                            recsData.find { rec.uri.toString() == it.recordingUri } != null
-                        }.sortedBy { rec ->
-                            recsData.find { it.recordingUri == rec.uri.toString() }!!.groupOrderNumber
-                        }
-                        if (recs.isNotEmpty())
-                        {
-                            val bundleList = arrayListOf<Bundle>()
-                            recs.forEach { rec ->
-                                bundleList+=Pair(rec, group).toMetaData().also {
-                                    it.putString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI, rec.uri.toString())
-                                    it.putBoolean("isOfPlaybackList", true)
+                                mainActivityVM.groups.find { group ->
+                                    group.uuid == recData?.groupUUID
                                 }
                             }
-                            mediaController.transportControls.playFromUri(recs[0].uri, Bundle().apply {
-                                putParcelableArrayList ("playbackList", bundleList)
-                                putInt("listIndex", index)
-                            })
+
+                            mediaController.transportControls.playFromUri(
+                                it.uri,
+                                Pair(it, currGroup).toMetaData()
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                mediaController.transportControls.setPlaybackSpeed(mainActivityVM.playbackSpeed)
+                            }
+                            mainActivityVM.onSetBackdrop(1)
+                        },
+                        onPausePlayPlayback = {
+                            val currGroup = mainActivityVM.currentPlaybackRec.let {
+                                val recData = if (it == null)
+                                    null
+                                else {
+                                    mainActivityVM.recordingsData.find { rec ->
+                                        rec.recordingUri == it.uri.toString()
+                                    }
+                                }
+                                mainActivityVM.groups.find { group ->
+                                    group.uuid == recData?.groupUUID
+                                }
+                            }
+
+                            if (mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PLAYING)
+                                mediaController.transportControls.pause()
+                            else if ((mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_PAUSED ||
+                                        mainActivityVM.currentPlaybackState == PlaybackStateCompat.STATE_STOPPED) &&
+                                mainActivityVM.currentPlaybackRec != null
+                            )
+                                mediaController.transportControls.playFromUri(
+                                    mainActivityVM.currentPlaybackRec!!.uri,
+                                    Pair(
+                                        mainActivityVM.currentPlaybackRec!!,
+                                        currGroup
+                                    ).toMetaData()
+                                )
+                        },
+                        onSeekPlayback = {
+                            mediaController.transportControls.seekTo(
+                                (it * (mainActivityVM.currentPlaybackRec?.duration ?: 0)).toLong()
+                            )
+                        },
+                        onShareRecordings = { onShareAsAudio(it) },
+                        onChooseImage = this::onChooseImage,
+                        onStartGroupPlayback = { index, group ->
+                            mainActivityVM.isGroupPlayback = true
+                            val recsData =
+                                mainActivityVM.recordingsData.filter { it.groupUUID == group.uuid }
+
+                            val recs = mainActivityVM.recordings.filter { rec ->
+                                recsData.find { rec.uri.toString() == it.recordingUri } != null
+                            }.sortedBy { rec ->
+                                recsData.find { it.recordingUri == rec.uri.toString() }!!.groupOrderNumber
+                            }
+                            if (recs.isNotEmpty()) {
+                                val bundleList = arrayListOf<Bundle>()
+                                recs.forEach { rec ->
+                                    bundleList += Pair(rec, group).toMetaData().also {
+                                        it.putString(
+                                            MediaMetadataCompat.METADATA_KEY_MEDIA_URI,
+                                            rec.uri.toString()
+                                        )
+                                        it.putBoolean("isOfPlaybackList", true)
+                                    }
+                                }
+                                mediaController.transportControls.playFromUri(
+                                    recs[0].uri,
+                                    Bundle().apply {
+                                        putParcelableArrayList("playbackList", bundleList)
+                                        putInt("listIndex", index)
+                                    })
+                            }
+                        },
+                        showDatePicker = this::showDatePicker,
+                        onSkipPlayback = {
+                            if (it == PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+                                mediaController.transportControls.skipToPrevious()
+                            else if (it == PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+                                mediaController.transportControls.skipToNext()
+                        },
+                        onTrim = this::trim,
+                        onStopPlayback = {
+                            mediaController.transportControls.pause()
+                        },
+                        onSetPlaybackSpeed = { speed ->
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                mediaController.transportControls.setPlaybackSpeed(speed)
+                            }
+                            mainActivityVM.playbackSpeed = speed
                         }
-                    },
-                    showDatePicker = this::showDatePicker,
-                    onSkipPlayback = {
-                        if (it == PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
-                            mediaController.transportControls.skipToPrevious()
-                        else if (it == PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
-                            mediaController.transportControls.skipToNext()
-                    },
-                    onTrim = this::trim,
-                    onStopPlayback = {
-                        mediaController.transportControls.pause()
-                    }
-                )
+                    )
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.jlong.miccheck.ui.compose
 
+import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -26,10 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -178,10 +181,11 @@ fun GroupScreen(
     onAddRecordings: () -> Unit,
     onChooseImage: ((Uri) -> Unit) -> Unit,
     onSaveEdit: (RecordingGroup, String, String?, Int?) -> Unit,
-    onRemoveRecording: (RecordingGroup, Recording) -> Unit,
+    onRemoveRecording: (Context, RecordingGroup, Recording) -> Unit,
     currentlyPlayingRec: Recording?,
 
-) {
+    ) {
+    val context = LocalContext.current
     var imgUri by remember {
         mutableStateOf(group.imgUri)
     }
@@ -189,7 +193,8 @@ fun GroupScreen(
         null
     else
         imgUri?.let {
-            rememberImagePainter(data = Uri.parse(it),
+            rememberImagePainter(
+                data = Uri.parse(it),
                 builder = {
                     crossfade(true)
                 }
@@ -391,7 +396,7 @@ fun GroupScreen(
                                         color.value.toArgb()
                                     )
                                     groupRecordings.filter { !selectedRecordings.contains(it) }
-                                        .forEach { onRemoveRecording(group, it) }
+                                        .forEach { onRemoveRecording(context, group, it) }
                                 }
                                 editing = !editing
                             },
@@ -436,6 +441,45 @@ fun GroupScreen(
     }
 }
 
+@Composable
+fun NoGroupsScreen(onCreateGroup: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(.75f), horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "You haven't created any Groups yet 📦",
+                style = MaterialTheme.typography.h5.copy(
+                    color = MaterialTheme.colors.onBackground.copy(
+                        alpha = .5f
+                    ), fontWeight = FontWeight.SemiBold
+                ),
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Groups allow you to organize your recordings in a way that looks and feels like an album.",
+                style = MaterialTheme.typography.h6.copy(
+                    color = MaterialTheme.colors.onBackground.copy(
+                        alpha = .5f
+                    )
+                ),
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onCreateGroup) {
+                Text(
+                    "Create a Group",
+                    style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.SemiBold)
+                )
+            }
+
+        }
+    }
+}
+
 @ExperimentalFoundationApi
 @ExperimentalAnimationApi
 @ExperimentalMaterialApi
@@ -444,7 +488,8 @@ fun GroupScreen(
 fun GroupScreenPreview() {
     MicCheckTheme {
         Surface(Modifier.fillMaxSize()) {
-            GroupScreen(group = RecordingGroup(
+            GroupScreen(
+                group = RecordingGroup(
                 "The Fall of Hobo Johnson",
                 null,
                 groupColors.random().toArgb(),
@@ -475,7 +520,7 @@ fun GroupScreenPreview() {
                 onAddRecordings = {},
                 onChooseImage = {},
                 onSaveEdit = {_, _, _, _ ->},
-                onRemoveRecording = {_, _ ->}
+                onRemoveRecording = { _, _, _ -> }
             )
         }
     }

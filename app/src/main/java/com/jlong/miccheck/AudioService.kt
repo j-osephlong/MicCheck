@@ -44,6 +44,7 @@ class AudioService : MediaBrowserServiceCompat() {
     private var mediaExtras: Bundle? = null
     private var playbackList: List<Pair<Uri, Bundle>>? = null
     private var currListIndex: Int = 0
+    private var playbackSpeed: Float = 1f
 
     private var notificationId = 101
     private var channelId = "micCheckAudioServiceControls"
@@ -105,17 +106,25 @@ class AudioService : MediaBrowserServiceCompat() {
 
         override fun onSkipToNext() {
             super.onSkipToNext()
-            if (currListIndex  == playbackList?.size?.minus(1) ||
-                    playbackList == null)
+            if (currListIndex == playbackList?.size?.minus(1) ||
+                playbackList == null
+            )
                 return
             currListIndex++
             onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
         }
 
+        override fun onSetPlaybackSpeed(speed: Float) {
+            super.onSetPlaybackSpeed(speed)
+            playbackSpeed = speed
+            updatePlaybackState(null)
+        }
+
         override fun onSkipToPrevious() {
             super.onSkipToPrevious()
-            if (currListIndex  == 0 ||
-                playbackList == null)
+            if (currListIndex == 0 ||
+                playbackList == null
+            )
                 return
             currListIndex--
             onPlayFromUri(playbackList!![currListIndex].first, playbackList!![currListIndex].second)
@@ -354,9 +363,13 @@ class AudioService : MediaBrowserServiceCompat() {
                 .setState(
                     state
                         ?: mMediaSession!!.controller.playbackState.state // this state is handled in the media controller
-                    , mExoPlayer?.currentPosition ?: 0L, 1.0f // Speed playing
+                    , mExoPlayer?.currentPosition ?: 0L, playbackSpeed // Speed playing
                 ).build()
         )
+
+        mExoPlayer?.setPlaybackSpeed(playbackSpeed)
+
+        Log.i("AudioService", "Update state, speed $playbackSpeed")
     }
 
     private fun playbackListBehavior () : Boolean {

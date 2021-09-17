@@ -94,13 +94,17 @@ fun TinyChip (
     Surface (
         shape = RoundedCornerShape(12.dp),
         color = color,
-        modifier = Modifier.clickable {onClick() }
+        modifier = Modifier
+            .clickable { onClick() }
+            .widthIn(max = 164.dp)
     ) {
-        Text (
+        Text(
             text.uppercase(),
             style = MaterialTheme.typography.body2.copy(fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(8.dp, 4.dp),
-            color = textColor.copy(alpha = .7f)
+            color = textColor.copy(alpha = .7f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -161,6 +165,62 @@ fun ConfirmDialog(
             },
             backgroundColor = MaterialTheme.colors.background,
             shape = RoundedCornerShape(18.dp)
+        )
+}
+
+@Composable
+fun PlaybackSpeedDialog(
+    visible: Boolean,
+    onExit: () -> Unit,
+    onPositive: (Float) -> Unit
+) {
+    var selection by remember { mutableStateOf(3) }
+    if (visible)
+        AlertDialog(
+            onDismissRequest = { /*TODO*/ },
+            dismissButton = {
+                TextButton(
+                    onClick = onExit,
+                    colors = ButtonDefaults.buttonColors(
+                        contentColor = MaterialTheme.colors.onBackground,
+                        backgroundColor = Color.Transparent
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onPositive(listOf(.25f, .5f, .75f, 1f, 1.5f, 2f)[selection])
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        contentColor = MaterialTheme.colors.onBackground,
+                        backgroundColor = Color.Transparent
+                    )
+                ) {
+                    Text("Done")
+                }
+            },
+            title = {
+                Text("Playback Speed")
+            },
+            text = {
+                Column {
+                    listOf(.25f, .5f, .75f, 1f, 1.5f, 2f).forEachIndexed { index, fl ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = selection == index,
+                                onClick = {
+                                    selection = index
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("x$fl speed", modifier = Modifier.clickable { selection = index })
+                        }
+                    }
+                }
+            }
         )
 }
 

@@ -28,6 +28,7 @@ import java.util.*
 
 class AppViewModel : ViewModel() {
     var settings by mutableStateOf(UserAndSettings())
+    var playbackSpeed by mutableStateOf(1f)
     var currentPlaybackRec by mutableStateOf<Recording?>(null)
         private set
     var isGroupPlayback by mutableStateOf(false)
@@ -106,8 +107,8 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun onRemoveRecordingFromGroup(group: RecordingGroup, recording: Recording) {
-        val recData = recordingsData.find {it.recordingUri == recording.uri.toString()}!!
+    fun onRemoveRecordingFromGroup(context: Context, group: RecordingGroup, recording: Recording) {
+        val recData = recordingsData.find { it.recordingUri == recording.uri.toString() }!!
         val recDataIndex = recordingsData.indexOf(recData)
 
         recData.groupOrderNumber = -1
@@ -115,7 +116,7 @@ class AppViewModel : ViewModel() {
 
         recordingsData[recDataIndex] = recData
 
-        orderGroup(group)
+        orderGroup(context, group)
 
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -124,9 +125,9 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun onAddRecordingsToGroup(group: RecordingGroup, recording: Recording?) {
-        fun addOne() {
-            val recDataRef = recordingsData.find { it.recordingUri == recording!!.uri.toString() }!!
+    fun onAddRecordingsToGroup(context: Context, group: RecordingGroup, recording: Recording?) {
+        fun addOne(rec: Recording) {
+            val recDataRef = recordingsData.find { it.recordingUri == rec.uri.toString() }!!
             val recDataIndex = recordingsData.indexOf(recDataRef)
 
             if (recDataRef.groupUUID == group.uuid)
@@ -135,14 +136,37 @@ class AppViewModel : ViewModel() {
             val orderNum = recordingsData.filter { it.groupUUID == group.uuid }
                 .let {
                     if (it.isEmpty()) 0
-                    else it.maxOf { it.groupOrderNumber }+1
+                    else it.maxOf { it.groupOrderNumber } + 1
                 }
 
             recDataRef.groupUUID = group.uuid
             recDataRef.groupOrderNumber = orderNum
             recordingsData[recDataIndex] = recDataRef
 
-            orderGroup(group)
+            orderGroup(context, group)
+
+            try {
+                context.contentResolver.update(
+                    rec.uri,
+                    ContentValues().apply {
+                        put(MediaStore.Audio.Media.ALBUM, group.name)
+                        put(
+                            MediaStore.Audio.Media.ALBUM_ID,
+                            UUID.fromString(group.uuid).leastSignificantBits.toInt()
+                        )
+                    },
+                    "${MediaStore.Audio.Media._ID} = ?",
+                    arrayOf(ContentUris.parseId(rec.uri).toString())
+                )
+            } catch (securityException: RuntimeException) {
+                if (Build.VERSION.SDK_INT >= 29 &&
+                    securityException is RecoverableSecurityException
+                ) {
+                    val intentSender =
+                        securityException.userAction.actionIntent.intentSender
+                    requestFilePermission(intentSender)
+                }
+            }
 
             viewModelScope.launch {
                 withContext(Dispatchers.IO) {
@@ -152,7 +176,7 @@ class AppViewModel : ViewModel() {
         }
 
         if (recording != null) {
-            addOne()
+            addOne(recording)
             return
         }
 
@@ -160,18 +184,7 @@ class AppViewModel : ViewModel() {
             return
 
         selectedRecordings.forEach { rec ->
-            val recDataRef = recordingsData.find { it.recordingUri == rec.uri.toString() }!!
-            val recDataIndex = recordingsData.indexOf(recDataRef)
-
-            val orderNum = recordingsData.filter { it.groupUUID == group.uuid }
-                .let {
-                    if (it.isEmpty()) 0
-                    else it.maxOf { it.groupOrderNumber }+1
-                }
-            recDataRef.groupOrderNumber = orderNum
-            recDataRef.groupUUID = group.uuid
-
-            recordingsData[recDataIndex] = recDataRef
+            addOne(rec)
         }
 
         viewModelScope.launch {
@@ -181,7 +194,7 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    fun orderGroup (group: RecordingGroup) {
+    fun orderGroup(context: Context, group: RecordingGroup) {
         var i = 0
         val recs = recordingsData.filter { it.groupUUID == group.uuid }
         val ordered = mutableListOf<RecordingData>()
@@ -189,12 +202,34 @@ class AppViewModel : ViewModel() {
             return
 
         var list = recs
-        while (list.isNotEmpty())
-        {
+        while (list.isNotEmpty()) {
             val min = list.minByOrNull { it.groupOrderNumber } ?: break
             recordingsData[recordingsData.indexOf(min)].groupOrderNumber = i++
             ordered += min
-            list = recs.filter { rec -> ordered.find {it.recordingUri == rec.recordingUri} == null}
+            list =
+                recs.filter { rec -> ordered.find { it.recordingUri == rec.recordingUri } == null }
+        }
+
+        recs.forEach { recData ->
+            val rec = recordings.find { it.uri.toString() == recData.recordingUri }!!
+            try {
+                context.contentResolver.update(
+                    rec.uri,
+                    ContentValues().apply {
+                        put(MediaStore.Audio.Media.TRACK, recData.groupOrderNumber)
+                    },
+                    "${MediaStore.Audio.Media._ID} = ?",
+                    arrayOf(ContentUris.parseId(rec.uri).toString())
+                )
+            } catch (securityException: RuntimeException) {
+                if (Build.VERSION.SDK_INT >= 29 &&
+                    securityException is RecoverableSecurityException
+                ) {
+                    val intentSender =
+                        securityException.userAction.actionIntent.intentSender
+                    requestFilePermission(intentSender)
+                }
+            }
         }
     }
 
@@ -285,7 +320,7 @@ class AppViewModel : ViewModel() {
             recordings.remove(recording)
             recordingsData.remove(recordingData)
             if (group != null)
-                orderGroup(group)
+                orderGroup(context, group)
         }
 
         viewModelScope.launch {
@@ -309,6 +344,9 @@ class AppViewModel : ViewModel() {
             currentRecordingUri!!,
             ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, "$title.m4a")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    put(MediaStore.Audio.Media.IS_RECORDING, 1)
+                }
             },
             "${MediaStore.Audio.Media._ID} = ?",
             arrayOf(ContentUris.parseId(currentRecordingUri!!).toString())

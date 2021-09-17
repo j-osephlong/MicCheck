@@ -188,8 +188,7 @@ data class PackagedData(
 @Serializable
 data class UserAndSettings (
     val firstLaunch: Boolean = true,
-    val firstGroups: Boolean = true,
-    val sampleRate: Int = 48000,
+    val sampleRate: Int = 44100,
     val encodingBitRate: Int = 384000
 )
 

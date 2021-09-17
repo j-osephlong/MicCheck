@@ -62,6 +62,7 @@ fun RecordingsScreen(
     onSelectRecording: (Recording) -> Unit,
     onClearSelected: () -> Unit,
     onOpenGroup: (RecordingGroup) -> Unit,
+    onCreateGroup: () -> Unit,
     showDatePicker: ((Long) -> Unit) -> Unit
 ) {
     val coroutine = rememberCoroutineScope()
@@ -107,14 +108,19 @@ fun RecordingsScreen(
                             ListPageHeader("Groups", onClick = { setPage(0) }) {
                                 Text("< Recordings", fontWeight = FontWeight.SemiBold)
                             }
-                            GroupsListSection(
-                                recordings = recordings,
-                                recordingsData = recordingsData,
-                                groups = groups,
-                                onClickGroup = onOpenGroup,
-                                modifier = Modifier
-                                    .fillMaxSize(),
-                            )
+                            if (groups.isNotEmpty())
+                                GroupsListSection(
+                                    recordings = recordings,
+                                    recordingsData = recordingsData,
+                                    groups = groups,
+                                    onClickGroup = onOpenGroup,
+                                    modifier = Modifier
+                                        .fillMaxSize(),
+                                )
+                            else
+                                NoGroupsScreen {
+                                    onCreateGroup()
+                                }
                             BackHandler(true) {
                                 setPage(0)
                             }

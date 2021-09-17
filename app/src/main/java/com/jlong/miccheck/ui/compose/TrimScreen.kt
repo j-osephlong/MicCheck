@@ -1,4 +1,4 @@
-package com.jlong.miccheck
+package com.jlong.miccheck.ui.compose
 
 import android.net.Uri
 import androidx.compose.animation.Crossfade
@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.jlong.miccheck.ui.compose.toTimestamp
+import com.jlong.miccheck.Recording
 import com.jlong.miccheck.ui.theme.MicCheckTheme
 import java.time.LocalDateTime
 

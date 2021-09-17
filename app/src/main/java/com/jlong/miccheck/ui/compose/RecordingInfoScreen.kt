@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.flowlayout.FlowRow
@@ -713,7 +714,7 @@ fun TagScreenPreview(
 }
 
 @ExperimentalAnimationApi
-@Preview
+@Preview(device = Devices.NEXUS_7)
 @Composable
 fun InfoPreview() {
     Surface(Modifier.fillMaxSize()) {
